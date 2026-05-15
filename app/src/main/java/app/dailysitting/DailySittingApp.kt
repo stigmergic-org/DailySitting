@@ -3,6 +3,7 @@ package app.dailysitting
 import android.annotation.SuppressLint
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,7 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,20 +36,24 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -64,13 +71,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
@@ -91,31 +100,106 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private data class DailySittingColors(
-    val background: Color,
-    val primary: Color,
-    val text: Color,
-    val muted: Color,
-    val card: Color,
-    val progressTrack: Color,
-)
-
-private val LightDailySittingColors = DailySittingColors(
-    background = Color(0xFFF7F3EA),
+private val LightDailySittingColorScheme = lightColorScheme(
     primary = Color(0xFF4F6F52),
-    text = Color(0xFF20251F),
-    muted = Color(0xFF697064),
-    card = Color(0xFFFFFBF3),
-    progressTrack = Color(0xFFE2DCCF),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD2E8CE),
+    onPrimaryContainer = Color(0xFF0C1F10),
+    inversePrimary = Color(0xFFB7CCB2),
+    secondary = Color(0xFF625F41),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE8E3BD),
+    onSecondaryContainer = Color(0xFF1E1C08),
+    tertiary = Color(0xFF456A64),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFC8ECE3),
+    onTertiaryContainer = Color(0xFF00201C),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    background = Color(0xFFFFF8F0),
+    onBackground = Color(0xFF1F1B16),
+    surface = Color(0xFFFFF8F0),
+    onSurface = Color(0xFF1F1B16),
+    surfaceVariant = Color(0xFFE2E4D7),
+    onSurfaceVariant = Color(0xFF45483F),
+    surfaceTint = Color(0xFF4F6F52),
+    inverseSurface = Color(0xFF34302A),
+    inverseOnSurface = Color(0xFFF7EFE6),
+    outline = Color(0xFF76786D),
+    outlineVariant = Color(0xFFC5C8BA),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFFFFF8F0),
+    surfaceDim = Color(0xFFE3DED6),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF9F2E9),
+    surfaceContainer = Color(0xFFF3ECE3),
+    surfaceContainerHigh = Color(0xFFEDE7DE),
+    surfaceContainerHighest = Color(0xFFE8E1D8),
+    primaryFixed = Color(0xFFD2E8CE),
+    primaryFixedDim = Color(0xFFB7CCB2),
+    onPrimaryFixed = Color(0xFF0C1F10),
+    onPrimaryFixedVariant = Color(0xFF38513B),
+    secondaryFixed = Color(0xFFE8E3BD),
+    secondaryFixedDim = Color(0xFFCCC6A1),
+    onSecondaryFixed = Color(0xFF1E1C08),
+    onSecondaryFixedVariant = Color(0xFF4A482B),
+    tertiaryFixed = Color(0xFFC8ECE3),
+    tertiaryFixedDim = Color(0xFFACCFC7),
+    onTertiaryFixed = Color(0xFF00201C),
+    onTertiaryFixedVariant = Color(0xFF2E514B),
 )
 
-private val DarkDailySittingColors = DailySittingColors(
-    background = Color(0xFF10130F),
-    primary = Color(0xFFA8C7A4),
-    text = Color(0xFFE9EDE4),
-    muted = Color(0xFFB2BAAC),
-    card = Color(0xFF1B2018),
-    progressTrack = Color(0xFF343B31),
+private val DarkDailySittingColorScheme = darkColorScheme(
+    primary = Color(0xFFB7CCB2),
+    onPrimary = Color(0xFF213526),
+    primaryContainer = Color(0xFF38513B),
+    onPrimaryContainer = Color(0xFFD2E8CE),
+    inversePrimary = Color(0xFF4F6F52),
+    secondary = Color(0xFFCCC6A1),
+    onSecondary = Color(0xFF333117),
+    secondaryContainer = Color(0xFF4A482B),
+    onSecondaryContainer = Color(0xFFE8E3BD),
+    tertiary = Color(0xFFACCFC7),
+    onTertiary = Color(0xFF173731),
+    tertiaryContainer = Color(0xFF2E514B),
+    onTertiaryContainer = Color(0xFFC8ECE3),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF14130E),
+    onBackground = Color(0xFFE8E2D9),
+    surface = Color(0xFF14130E),
+    onSurface = Color(0xFFE8E2D9),
+    surfaceVariant = Color(0xFF45483F),
+    onSurfaceVariant = Color(0xFFC5C8BA),
+    surfaceTint = Color(0xFFB7CCB2),
+    inverseSurface = Color(0xFFE8E2D9),
+    inverseOnSurface = Color(0xFF34302A),
+    outline = Color(0xFF8F9286),
+    outlineVariant = Color(0xFF45483F),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFF3A3831),
+    surfaceDim = Color(0xFF14130E),
+    surfaceContainerLowest = Color(0xFF0F0E0A),
+    surfaceContainerLow = Color(0xFF1F1D17),
+    surfaceContainer = Color(0xFF23211B),
+    surfaceContainerHigh = Color(0xFF2D2B25),
+    surfaceContainerHighest = Color(0xFF38362F),
+    primaryFixed = Color(0xFFD2E8CE),
+    primaryFixedDim = Color(0xFFB7CCB2),
+    onPrimaryFixed = Color(0xFF0C1F10),
+    onPrimaryFixedVariant = Color(0xFF38513B),
+    secondaryFixed = Color(0xFFE8E3BD),
+    secondaryFixedDim = Color(0xFFCCC6A1),
+    onSecondaryFixed = Color(0xFF1E1C08),
+    onSecondaryFixedVariant = Color(0xFF4A482B),
+    tertiaryFixed = Color(0xFFC8ECE3),
+    tertiaryFixedDim = Color(0xFFACCFC7),
+    onTertiaryFixed = Color(0xFF00201C),
+    onTertiaryFixedVariant = Color(0xFF2E514B),
 )
 
 private val AppBackground: Color
@@ -127,7 +211,7 @@ private val AppText: Color
 private val AppMuted: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val AppCard: Color
-    @Composable get() = MaterialTheme.colorScheme.surface
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerLow
 private val AppProgressTrack: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
@@ -187,38 +271,7 @@ fun DailySittingApp(
 
 @Composable
 private fun DailySittingTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) DarkDailySittingColors else LightDailySittingColors
-    val colorScheme = if (isSystemInDarkTheme()) {
-        darkColorScheme(
-            primary = colors.primary,
-            onPrimary = Color(0xFF1B2018),
-            primaryContainer = colors.progressTrack,
-            onPrimaryContainer = colors.text,
-            secondary = Color(0xFFD7C896),
-            secondaryContainer = colors.progressTrack,
-            onSecondaryContainer = colors.text,
-            background = colors.background,
-            surface = colors.card,
-            surfaceVariant = colors.progressTrack,
-            onSurface = colors.text,
-            onSurfaceVariant = colors.muted,
-        )
-    } else {
-        lightColorScheme(
-            primary = colors.primary,
-            onPrimary = Color.White,
-            primaryContainer = colors.progressTrack,
-            onPrimaryContainer = colors.text,
-            secondary = Color(0xFF7B6E4D),
-            secondaryContainer = colors.progressTrack,
-            onSecondaryContainer = colors.text,
-            background = colors.background,
-            surface = colors.card,
-            surfaceVariant = colors.progressTrack,
-            onSurface = colors.text,
-            onSurfaceVariant = colors.muted,
-        )
-    }
+    val colorScheme = if (isSystemInDarkTheme()) DarkDailySittingColorScheme else LightDailySittingColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
@@ -243,14 +296,8 @@ private fun DailySittingTopBar(
         },
         navigationIcon = {
             if (navigationText != null && onNavigationClick != null) {
-                FilledTonalButton(
-                    onClick = onNavigationClick,
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                ) {
-                    Text(navigationText)
+                IconButton(onClick = onNavigationClick) {
+                    Icon(Icons.Default.Close, contentDescription = navigationText)
                 }
             }
         },
@@ -290,7 +337,8 @@ private fun AddFabMenu(
         }
         FloatingActionButton(
             onClick = { onExpandedChange(!expanded) },
-            shape = CircleShape,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
             Icon(
                 imageVector = if (expanded) Icons.Default.Close else Icons.Default.Add,
@@ -310,7 +358,6 @@ private fun FabMenuAction(
         onClick = onClick,
         icon = icon,
         text = { Text(label) },
-        shape = RoundedCornerShape(28.dp),
         containerColor = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     )
@@ -393,7 +440,8 @@ private fun TimerListScreen(
             onExpandedChange = { fabExpanded = it },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .navigationBarsPadding()
+                .padding(end = 24.dp, bottom = 24.dp),
         )
     }
 }
@@ -434,8 +482,17 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
         shape = RoundedCornerShape(18.dp),
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(text = label, color = AppMuted, fontSize = 12.sp)
-            Text(text = value, color = AppText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = label,
+                color = AppMuted,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                text = value,
+                color = AppText,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -463,7 +520,7 @@ private fun HealthConnectCard(
             Text(
                 text = healthConnect.message,
                 color = AppMuted,
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyMedium,
             )
             if (healthConnect.status == HealthConnectStatus.NeedsPermission) {
                 Button(
@@ -484,9 +541,9 @@ private fun PresetCard(
     onEdit: () -> Unit,
 ) {
     Card(
+        onClick = onStart,
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onStart),
+            .fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = AppCard),
         shape = RoundedCornerShape(26.dp),
     ) {
@@ -501,20 +558,19 @@ private fun PresetCard(
                 Text(
                     text = preset.name,
                     color = AppText,
-                    fontSize = 22.sp,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = presetDescription(preset),
                     color = AppMuted,
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            FilledTonalButton(
+            FilledTonalIconButton(
                 onClick = onEdit,
                 modifier = Modifier.size(48.dp),
-                contentPadding = PaddingValues(0.dp),
             ) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit timer")
             }
@@ -631,7 +687,7 @@ private fun TimerEditorScreen(
                                     "No interval bell"
                                 },
                                 color = AppMuted,
-                                fontSize = 14.sp,
+                                style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         Switch(
@@ -720,7 +776,7 @@ private fun BellSoundSelector(
                 Text(
                     text = "Tap a sound to preview it",
                     color = AppMuted,
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
             LazyRow(
@@ -745,15 +801,43 @@ private fun BellSoundCard(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val content: @Composable () -> Unit = {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.secondary
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            },
+        ),
+    ) {
         Column(
-            modifier = Modifier.width(120.dp),
+            modifier = Modifier
+                .width(120.dp)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             BellSoundIconGraphic(
                 icon = option.icon,
-                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
             )
             Text(
                 text = option.name,
@@ -763,31 +847,9 @@ private fun BellSoundCard(
             Text(
                 text = option.description,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
-                } else {
-                    AppMuted
-                },
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else AppMuted,
                 textAlign = TextAlign.Center,
             )
-        }
-    }
-
-    if (selected) {
-        Button(
-            onClick = onClick,
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-        ) {
-            content()
-        }
-    } else {
-        FilledTonalButton(
-            onClick = onClick,
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-        ) {
-            content()
         }
     }
 }
@@ -891,7 +953,7 @@ private fun ManualSessionScreen(
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { selectedDateMillis ->
                             sessionDate = Instant
@@ -906,7 +968,7 @@ private fun ManualSessionScreen(
                 }
             },
             dismissButton = {
-                FilledTonalButton(onClick = { showDatePicker = false }) {
+                TextButton(onClick = { showDatePicker = false }) {
                     Text("Cancel")
                 }
             },
@@ -919,7 +981,7 @@ private fun ManualSessionScreen(
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
                         sessionTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
                         showTimePicker = false
@@ -929,7 +991,7 @@ private fun ManualSessionScreen(
                 }
             },
             dismissButton = {
-                FilledTonalButton(onClick = { showTimePicker = false }) {
+                TextButton(onClick = { showTimePicker = false }) {
                     Text("Cancel")
                 }
             },
@@ -1026,16 +1088,37 @@ private fun ExpressiveTimerProgress(
     modifier: Modifier = Modifier,
 ) {
     val boundedProgress = progress.coerceIn(0f, 1f)
+    val indicatorSize = 284.dp
+    val trackSize = 264.dp
+    val strokeWidth = 26.dp
+    val progressStroke = with(LocalDensity.current) {
+        Stroke(width = strokeWidth.toPx(), cap = StrokeCap.Round)
+    }
 
     Box(
-        modifier = modifier.size(284.dp),
+        modifier = modifier.size(indicatorSize),
         contentAlignment = Alignment.Center,
     ) {
+        CircularProgressIndicator(
+            progress = { boundedProgress },
+            modifier = Modifier
+                .requiredSize(trackSize)
+                .clearAndSetSemantics { },
+            color = Color.Transparent,
+            strokeWidth = strokeWidth,
+            trackColor = AppProgressTrack,
+            strokeCap = StrokeCap.Round,
+        )
         CircularWavyProgressIndicator(
             progress = { boundedProgress },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.requiredSize(indicatorSize),
             color = AppPrimary,
-            trackColor = AppProgressTrack,
+            trackColor = Color.Transparent,
+            stroke = progressStroke,
+            trackStroke = progressStroke,
+            amplitude = { 1f },
+            wavelength = 134.dp,
+            waveSpeed = 12.dp,
         )
         Text(
             text = formatSeconds(remainingSeconds),
