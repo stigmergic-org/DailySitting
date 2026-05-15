@@ -76,6 +76,16 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
     }
 
+    fun showMeditationLog() {
+        uiState = uiState.copy(
+            screen = AppScreen.MeditationLog,
+            editingPreset = null,
+            selectedPreset = null,
+            completedSession = null,
+        )
+        refreshHealthConnect()
+    }
+
     fun savePreset(name: String, durationMinutes: Int, intervalMinutes: Int?, bellSoundId: String) {
         val existingPreset = uiState.editingPreset
         val cleanDuration = durationMinutes.coerceIn(1, 24 * 60)
@@ -100,6 +110,16 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         store.deletePreset(preset.id)
         reloadLocalState()
         showTimerList()
+    }
+
+    fun deleteSession(session: SittingSession) {
+        viewModelScope.launch {
+            val healthConnect = healthConnectWriter.deleteSession(session)
+            uiState = uiState.copy(healthConnect = healthConnect)
+            if (healthConnect.status == HealthConnectStatus.Synced) {
+                refreshStatsFromHealthConnect()
+            }
+        }
     }
 
     fun addManualSession(endedDate: LocalDate, endedTime: LocalTime, durationMinutes: Int) {

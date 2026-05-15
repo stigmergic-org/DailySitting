@@ -6,6 +6,7 @@ enum class AppScreen {
     TimerList,
     Editor,
     ManualSession,
+    MeditationLog,
     Timer,
     Complete,
 }

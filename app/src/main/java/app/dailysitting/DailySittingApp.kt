@@ -83,10 +83,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
@@ -96,6 +99,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -223,7 +227,8 @@ fun DailySittingApp(
     DailySittingTheme {
         BackHandler(
             enabled = viewModel.uiState.screen == AppScreen.Editor ||
-                viewModel.uiState.screen == AppScreen.ManualSession,
+                viewModel.uiState.screen == AppScreen.ManualSession ||
+                viewModel.uiState.screen == AppScreen.MeditationLog,
             onBack = viewModel::showTimerList,
         )
         Surface(
@@ -237,6 +242,7 @@ fun DailySittingApp(
                     onEdit = viewModel::showEditor,
                     onAdd = { viewModel.showEditor(null) },
                     onAddSession = viewModel::showManualSession,
+                    onShowLog = viewModel::showMeditationLog,
                     onRequestHealthPermissions = onRequestHealthPermissions,
                 )
 
@@ -251,6 +257,13 @@ fun DailySittingApp(
                 AppScreen.ManualSession -> ManualSessionScreen(
                     onSave = viewModel::addManualSession,
                     onCancel = viewModel::showTimerList,
+                )
+
+                AppScreen.MeditationLog -> MeditationLogScreen(
+                    state = viewModel.uiState,
+                    onBack = viewModel::showTimerList,
+                    onDeleteSession = viewModel::deleteSession,
+                    onRequestHealthPermissions = onRequestHealthPermissions,
                 )
 
                 AppScreen.Timer -> ActiveTimerScreen(
@@ -285,6 +298,7 @@ private fun DailySittingTopBar(
     title: String,
     navigationText: String? = null,
     onNavigationClick: (() -> Unit)? = null,
+    actions: @Composable () -> Unit = {},
 ) {
     CenterAlignedTopAppBar(
         title = {
@@ -297,10 +311,14 @@ private fun DailySittingTopBar(
         navigationIcon = {
             if (navigationText != null && onNavigationClick != null) {
                 IconButton(onClick = onNavigationClick) {
-                    Icon(Icons.Default.Close, contentDescription = navigationText)
+                    Icon(
+                        imageVector = if (navigationText == "Back") Icons.Default.ArrowBack else Icons.Default.Close,
+                        contentDescription = navigationText,
+                    )
                 }
             }
         },
+        actions = { actions() },
     )
 }
 
@@ -319,7 +337,7 @@ private fun AddFabMenu(
     ) {
         if (expanded) {
             FabMenuAction(
-                label = "Timer",
+                label = "New timer",
                 icon = { Icon(Icons.Default.Timer, contentDescription = null) },
                 onClick = {
                     onExpandedChange(false)
@@ -327,7 +345,7 @@ private fun AddFabMenu(
                 },
             )
             FabMenuAction(
-                label = "Session",
+                label = "Log session",
                 icon = { Icon(Icons.Default.Event, contentDescription = null) },
                 onClick = {
                     onExpandedChange(false)
@@ -370,13 +388,23 @@ private fun TimerListScreen(
     onEdit: (TimerPreset) -> Unit,
     onAdd: () -> Unit,
     onAddSession: () -> Unit,
+    onShowLog: () -> Unit,
     onRequestHealthPermissions: () -> Unit,
 ) {
     var fabExpanded by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            topBar = { DailySittingTopBar("Daily Sitting") },
+            topBar = {
+                DailySittingTopBar(
+                    title = "Daily Sitting",
+                    actions = {
+                        IconButton(onClick = onShowLog) {
+                            Icon(Icons.Default.History, contentDescription = "View meditation log")
+                        }
+                    },
+                )
+            },
             containerColor = MaterialTheme.colorScheme.background,
         ) { innerPadding ->
             LazyColumn(
@@ -534,6 +562,187 @@ private fun HealthConnectCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MeditationLogScreen(
+    state: DailySittingUiState,
+    onBack: () -> Unit,
+    onDeleteSession: (SittingSession) -> Unit,
+    onRequestHealthPermissions: () -> Unit,
+) {
+    val context = LocalContext.current
+    val use24HourTime = DateFormat.is24HourFormat(context)
+    val sessions = state.sessions.sortedByDescending { it.endedAtMillis }
+    var sessionPendingDelete by remember { mutableStateOf<SittingSession?>(null) }
+
+    sessionPendingDelete?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionPendingDelete = null },
+            title = { Text("Delete log entry?") },
+            text = {
+                Text(
+                    "This will remove ${session.durationMinutes} minutes from your Health Connect meditation log.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        sessionPendingDelete = null
+                        onDeleteSession(session)
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionPendingDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            DailySittingTopBar(
+                title = "Meditation Log",
+                navigationText = "Back",
+                onNavigationClick = onBack,
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (sessions.isEmpty()) {
+                item {
+                    MeditationLogEmptyCard(
+                        healthConnect = state.healthConnect,
+                        onRequestHealthPermissions = onRequestHealthPermissions,
+                    )
+                }
+            } else {
+                items(sessions, key = { it.id }) { session ->
+                    MeditationLogSessionCard(
+                        session = session,
+                        use24HourTime = use24HourTime,
+                        onDelete = { sessionPendingDelete = session },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MeditationLogEmptyCard(
+    healthConnect: HealthConnectUi,
+    onRequestHealthPermissions: () -> Unit,
+) {
+    val message = when (healthConnect.status) {
+        HealthConnectStatus.Checking -> "Loading meditation sessions."
+        HealthConnectStatus.NeedsPermission -> "Connect Health Connect to view your meditation log."
+        HealthConnectStatus.Unavailable -> healthConnect.message
+        HealthConnectStatus.Error -> healthConnect.message
+        HealthConnectStatus.Ready,
+        HealthConnectStatus.Synced -> "No meditation sessions found."
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = AppCard),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Meditation log",
+                color = AppText,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = message,
+                color = AppMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (healthConnect.status == HealthConnectStatus.NeedsPermission) {
+                Button(
+                    onClick = onRequestHealthPermissions,
+                    modifier = Modifier.height(48.dp),
+                ) {
+                    Text("Connect")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MeditationLogSessionCard(
+    session: SittingSession,
+    use24HourTime: Boolean,
+    onDelete: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = AppCard),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Timer, contentDescription = null)
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = session.presetName,
+                    color = AppText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = formatSessionDateTime(session, use24HourTime),
+                    color = AppMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Text(
+                text = "${session.durationMinutes}m",
+                color = AppText,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete log entry",
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PresetCard(
     preset: TimerPreset,
@@ -628,9 +837,33 @@ private fun TimerEditorScreen(
     var selectedBellSoundId by remember(preset?.id) {
         mutableStateOf(cleanBellSoundId(preset?.bellSoundId))
     }
+    var presetPendingDelete by remember(preset?.id) { mutableStateOf<TimerPreset?>(null) }
     val maxIntervalMinutes = (durationMinutes - 1).coerceAtLeast(1)
     val cleanIntervalMinutes = intervalMinutes.coerceIn(1, maxIntervalMinutes)
     val intervalEnabled = durationMinutes > 1
+
+    presetPendingDelete?.let { timerPreset ->
+        AlertDialog(
+            onDismissRequest = { presetPendingDelete = null },
+            title = { Text("Delete timer?") },
+            text = { Text("This will remove ${timerPreset.name} from your timer list.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        presetPendingDelete = null
+                        onDelete(timerPreset)
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { presetPendingDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -739,7 +972,7 @@ private fun TimerEditorScreen(
             }
             if (preset != null) {
                 FilledTonalButton(
-                    onClick = { onDelete(preset) },
+                    onClick = { presetPendingDelete = preset },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
@@ -1291,6 +1524,16 @@ private fun presetDescription(preset: TimerPreset): String {
     } else {
         "${preset.durationMinutes} min, bell every $interval min"
     }
+}
+
+private fun formatSessionDateTime(session: SittingSession, use24HourTime: Boolean): String {
+    val endedAt = Instant
+        .ofEpochMilli(session.endedAtMillis)
+        .atZone(ZoneId.systemDefault())
+    val date = endedAt.toLocalDate().format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
+    val timePattern = if (use24HourTime) "HH:mm" else "h:mm a"
+    val time = endedAt.toLocalTime().format(DateTimeFormatter.ofPattern(timePattern, Locale.getDefault()))
+    return "$date, $time"
 }
 
 private fun completionRecordText(

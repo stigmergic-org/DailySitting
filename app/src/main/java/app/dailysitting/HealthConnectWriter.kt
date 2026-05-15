@@ -138,4 +138,29 @@ class HealthConnectWriter(private val context: Context) {
             )
         }
     }
+
+    suspend fun deleteSession(session: SittingSession): HealthConnectUi {
+        val currentState = refreshState()
+        if (currentState.status != HealthConnectStatus.Ready) {
+            return currentState.copy(message = "Not deleted. ${currentState.message}")
+        }
+
+        return try {
+            val client = HealthConnectClient.getOrCreate(context)
+            client.deleteRecords(
+                recordType = MindfulnessSessionRecord::class,
+                recordIdsList = listOf(session.id),
+                clientRecordIdsList = emptyList(),
+            )
+            HealthConnectUi(
+                status = HealthConnectStatus.Synced,
+                message = "Deleted from Health Connect",
+            )
+        } catch (error: Exception) {
+            HealthConnectUi(
+                status = HealthConnectStatus.Error,
+                message = "Not deleted. Health Connect delete failed: ${error.message ?: "unknown error"}",
+            )
+        }
+    }
 }
