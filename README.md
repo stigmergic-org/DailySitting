@@ -1,6 +1,11 @@
 # Daily Sitting
 
-Daily Sitting is a small Android meditation timer. It is intentionally not a content platform: no courses, feeds, coaching, accounts, or social features.
+<p align="center">
+  <img src="assets/daily-sitting-logo.png" alt="Daily Sitting logo" width="128" height="128">
+</p>
+
+Daily Sitting is a small Android meditation timer that integrates with Health Connect. It is intentionally not a content platform: no courses, feeds, coaching, accounts, or social features.
+
 
 ## Product Scope
 
@@ -11,7 +16,8 @@ Daily Sitting is a small Android meditation timer. It is intentionally not a con
 - Record completed sessions to Health Connect.
 - Manually add past sessions to Health Connect with date, time, and length.
 - Show the current streak after the ending bell.
-- Read mindfulness sessions from Health Connect for today, streak, and total minutes.
+- Read mindfulness sessions from Health Connect for today, streak, weekly minutes, and the meditation log.
+- Import meditation sessions from Insight Timer CSV exports.
 - Keep only timer presets in app storage; session history is not persisted locally.
 
 ## Android Build
