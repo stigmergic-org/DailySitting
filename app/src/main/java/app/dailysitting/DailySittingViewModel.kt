@@ -1,6 +1,7 @@
 package app.dailysitting
 
 import android.app.Application
+import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -8,9 +9,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -116,6 +119,63 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             val healthConnect = healthConnectWriter.deleteSession(session)
             uiState = uiState.copy(healthConnect = healthConnect)
+            if (healthConnect.status == HealthConnectStatus.Synced) {
+                refreshStatsFromHealthConnect()
+            }
+        }
+    }
+
+    fun importInsightTimerLogs(uri: Uri) {
+        viewModelScope.launch {
+            uiState = uiState.copy(
+                healthConnect = uiState.healthConnect.copy(message = "Importing Insight Timer logs"),
+            )
+
+            val result = try {
+                val csv = withContext(Dispatchers.IO) {
+                    getApplication<Application>()
+                        .contentResolver
+                        .openInputStream(uri)
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        ?: throw IllegalArgumentException("Could not open selected file")
+                }
+                parseInsightTimerLogs(csv)
+            } catch (error: Exception) {
+                uiState = uiState.copy(
+                    healthConnect = HealthConnectUi(
+                        status = HealthConnectStatus.Error,
+                        message = "Could not import logs: ${error.message ?: "unknown error"}",
+                    ),
+                )
+                return@launch
+            }
+
+            if (result.sessions.isEmpty()) {
+                uiState = uiState.copy(
+                    healthConnect = HealthConnectUi(
+                        status = HealthConnectStatus.Error,
+                        message = "No Insight Timer sessions found in the selected file",
+                    ),
+                )
+                return@launch
+            }
+
+            val existingSessionKeys = uiState.sessions
+                .map { it.startedAtMillis to it.endedAtMillis }
+                .toSet()
+            val importSessions = result.sessions
+                .distinctBy { it.startedAtMillis to it.endedAtMillis }
+                .filterNot { (it.startedAtMillis to it.endedAtMillis) in existingSessionKeys }
+
+            val healthConnect = healthConnectWriter.writeSessions(importSessions)
+            val skippedCount = result.skippedRows + result.sessions.size - importSessions.size
+            val message = if (healthConnect.status == HealthConnectStatus.Synced) {
+                buildImportMessage(importSessions.size, skippedCount)
+            } else {
+                healthConnect.message
+            }
+            uiState = uiState.copy(healthConnect = healthConnect.copy(message = message))
             if (healthConnect.status == HealthConnectStatus.Synced) {
                 refreshStatsFromHealthConnect()
             }
@@ -322,6 +382,19 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         uiState = uiState.copy(healthConnect = healthConnect)
         if (healthConnect.status == HealthConnectStatus.Synced) {
             refreshStatsFromHealthConnect()
+        }
+    }
+
+    private fun buildImportMessage(importedCount: Int, skippedCount: Int): String {
+        val importedText = if (importedCount == 0) {
+            "No new sessions to import"
+        } else {
+            "Imported $importedCount Insight Timer session${if (importedCount == 1) "" else "s"}"
+        }
+        return if (skippedCount > 0) {
+            "$importedText. Skipped $skippedCount duplicate or invalid row${if (skippedCount == 1) "" else "s"}."
+        } else {
+            importedText
         }
     }
 }

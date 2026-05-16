@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.health.connect.client.PermissionController
 
 class MainActivity : ComponentActivity() {
@@ -18,6 +19,14 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val importLogs = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importInsightTimerLogs(uri)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -26,6 +35,16 @@ class MainActivity : ComponentActivity() {
                 viewModel = viewModel,
                 onRequestHealthPermissions = {
                     requestHealthPermissions.launch(HealthConnectPermissions)
+                },
+                onImportLogs = {
+                    importLogs.launch(
+                        arrayOf(
+                            "text/*",
+                            "text/csv",
+                            "application/csv",
+                            "application/vnd.ms-excel",
+                        ),
+                    )
                 },
             )
         }

@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -223,6 +224,7 @@ private val AppProgressTrack: Color
 fun DailySittingApp(
     viewModel: DailySittingViewModel,
     onRequestHealthPermissions: () -> Unit,
+    onImportLogs: () -> Unit,
 ) {
     DailySittingTheme {
         BackHandler(
@@ -263,6 +265,7 @@ fun DailySittingApp(
                     state = viewModel.uiState,
                     onBack = viewModel::showTimerList,
                     onDeleteSession = viewModel::deleteSession,
+                    onImportLogs = onImportLogs,
                     onRequestHealthPermissions = onRequestHealthPermissions,
                 )
 
@@ -568,12 +571,41 @@ private fun MeditationLogScreen(
     state: DailySittingUiState,
     onBack: () -> Unit,
     onDeleteSession: (SittingSession) -> Unit,
+    onImportLogs: () -> Unit,
     onRequestHealthPermissions: () -> Unit,
 ) {
     val context = LocalContext.current
     val use24HourTime = DateFormat.is24HourFormat(context)
     val sessions = state.sessions.sortedByDescending { it.endedAtMillis }
     var sessionPendingDelete by remember { mutableStateOf<SittingSession?>(null) }
+    var showImportExplanation by remember { mutableStateOf(false) }
+
+    if (showImportExplanation) {
+        AlertDialog(
+            onDismissRequest = { showImportExplanation = false },
+            title = { Text("Import Insight Timer logs") },
+            text = {
+                Text(
+                    "Choose a CSV export from Insight Timer. Daily Sitting will import meditation sessions into Health Connect and skip entries already in your log.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportExplanation = false
+                        onImportLogs()
+                    },
+                ) {
+                    Text("Choose CSV")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportExplanation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     sessionPendingDelete?.let { session ->
         AlertDialog(
@@ -608,6 +640,11 @@ private fun MeditationLogScreen(
                 title = "Meditation Log",
                 navigationText = "Back",
                 onNavigationClick = onBack,
+                actions = {
+                    IconButton(onClick = { showImportExplanation = true }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Import logs")
+                    }
+                },
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -619,6 +656,15 @@ private fun MeditationLogScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (sessions.isNotEmpty() && shouldShowMeditationLogStatus(state.healthConnect)) {
+                item {
+                    MeditationLogStatusCard(
+                        healthConnect = state.healthConnect,
+                        onRequestHealthPermissions = onRequestHealthPermissions,
+                    )
+                }
+            }
+
             if (sessions.isEmpty()) {
                 item {
                     MeditationLogEmptyCard(
@@ -633,6 +679,40 @@ private fun MeditationLogScreen(
                         use24HourTime = use24HourTime,
                         onDelete = { sessionPendingDelete = session },
                     )
+                }
+            }
+        }
+    }
+}
+
+private fun shouldShowMeditationLogStatus(healthConnect: HealthConnectUi): Boolean =
+    healthConnect.status != HealthConnectStatus.Ready
+
+@Composable
+private fun MeditationLogStatusCard(
+    healthConnect: HealthConnectUi,
+    onRequestHealthPermissions: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = AppCard),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = healthConnect.message,
+                modifier = Modifier.weight(1f),
+                color = AppMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (healthConnect.status == HealthConnectStatus.NeedsPermission) {
+                TextButton(onClick = onRequestHealthPermissions) {
+                    Text("Connect")
                 }
             }
         }

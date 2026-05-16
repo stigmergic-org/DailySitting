@@ -111,22 +111,7 @@ class HealthConnectWriter(private val context: Context) {
 
         return try {
             val client = HealthConnectClient.getOrCreate(context)
-            val start = Instant.ofEpochMilli(session.startedAtMillis)
-            val end = Instant.ofEpochMilli(session.endedAtMillis)
-            val zoneRules = ZoneId.systemDefault().rules
-            client.insertRecords(
-                listOf(
-                    MindfulnessSessionRecord(
-                        startTime = start,
-                        startZoneOffset = zoneRules.getOffset(start),
-                        endTime = end,
-                        endZoneOffset = zoneRules.getOffset(end),
-                        metadata = Metadata.manualEntry(clientRecordId = "daily-sitting-${session.id}"),
-                        mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
-                        title = session.presetName,
-                    ),
-                ),
-            )
+            client.insertRecords(listOf(session.toMindfulnessSessionRecord()))
             HealthConnectUi(
                 status = HealthConnectStatus.Synced,
                 message = "Saved to Health Connect",
@@ -135,6 +120,37 @@ class HealthConnectWriter(private val context: Context) {
             HealthConnectUi(
                 status = HealthConnectStatus.Error,
                 message = "Not recorded. Health Connect write failed: ${error.message ?: "unknown error"}",
+            )
+        }
+    }
+
+    suspend fun writeSessions(sessions: List<SittingSession>): HealthConnectUi {
+        if (sessions.isEmpty()) {
+            return HealthConnectUi(
+                status = HealthConnectStatus.Synced,
+                message = "No new sessions to import",
+            )
+        }
+
+        val currentState = refreshState()
+        if (currentState.status != HealthConnectStatus.Ready) {
+            return currentState.copy(message = "Not imported. ${currentState.message}")
+        }
+
+        return try {
+            val client = HealthConnectClient.getOrCreate(context)
+            sessions
+                .map { it.toMindfulnessSessionRecord() }
+                .chunked(500)
+                .forEach { records -> client.insertRecords(records) }
+            HealthConnectUi(
+                status = HealthConnectStatus.Synced,
+                message = "Imported ${sessions.size} session${if (sessions.size == 1) "" else "s"}",
+            )
+        } catch (error: Exception) {
+            HealthConnectUi(
+                status = HealthConnectStatus.Error,
+                message = "Not imported. Health Connect import failed: ${error.message ?: "unknown error"}",
             )
         }
     }
@@ -162,5 +178,20 @@ class HealthConnectWriter(private val context: Context) {
                 message = "Not deleted. Health Connect delete failed: ${error.message ?: "unknown error"}",
             )
         }
+    }
+
+    private fun SittingSession.toMindfulnessSessionRecord(): MindfulnessSessionRecord {
+        val start = Instant.ofEpochMilli(startedAtMillis)
+        val end = Instant.ofEpochMilli(endedAtMillis)
+        val zoneRules = ZoneId.systemDefault().rules
+        return MindfulnessSessionRecord(
+            startTime = start,
+            startZoneOffset = zoneRules.getOffset(start),
+            endTime = end,
+            endZoneOffset = zoneRules.getOffset(end),
+            metadata = Metadata.manualEntry(clientRecordId = "daily-sitting-$id"),
+            mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
+            title = presetName,
+        )
     }
 }
