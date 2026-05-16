@@ -1,4 +1,4 @@
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity

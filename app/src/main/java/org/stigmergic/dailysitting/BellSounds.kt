@@ -1,4 +1,4 @@
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 const val DefaultBellSoundId = "struck"
 

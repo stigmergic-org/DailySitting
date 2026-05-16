@@ -1,4 +1,4 @@
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 import android.content.Context
 import android.media.MediaPlayer

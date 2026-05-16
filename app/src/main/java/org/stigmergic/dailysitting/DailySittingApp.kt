@@ -1,4 +1,4 @@
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 import android.annotation.SuppressLint
 import android.text.format.DateFormat

@@ -16,11 +16,11 @@ val hasReleaseSigning = listOf(
 ).all { !it.isNullOrBlank() }
 
 android {
-    namespace = "app.dailysitting"
+    namespace = "org.stigmergic.dailysitting"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.dailysitting"
+        applicationId = "org.stigmergic.dailysitting"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

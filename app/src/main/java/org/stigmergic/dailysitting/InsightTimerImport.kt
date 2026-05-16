@@ -1,4 +1,4 @@
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 import java.time.LocalDateTime
 import java.time.ZoneId

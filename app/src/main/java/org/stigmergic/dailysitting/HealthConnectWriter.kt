@@ -1,6 +1,6 @@
 @file:OptIn(androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi::class)
 
-package app.dailysitting
+package org.stigmergic.dailysitting
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
