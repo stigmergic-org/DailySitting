@@ -89,13 +89,13 @@ class SittingStore(context: Context) {
             id = "default-20",
             name = "20 minutes",
             durationMinutes = 20,
-            intervalMinutes = 5,
+            intervalMinutes = null,
         ),
         TimerPreset(
             id = "default-30",
             name = "30 minutes",
             durationMinutes = 30,
-            intervalMinutes = 10,
+            intervalMinutes = 15,
         ),
     )
 }
