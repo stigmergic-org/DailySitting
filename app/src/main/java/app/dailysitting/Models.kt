@@ -54,6 +54,7 @@ data class DailySittingUiState(
     val isTimerRunning: Boolean = false,
     val streakDays: Int = 0,
     val todayMinutes: Int = 0,
+    val weekMinutes: Int = 0,
     val totalMinutes: Int = 0,
     val healthConnect: HealthConnectUi = HealthConnectUi(),
 )

@@ -498,8 +498,8 @@ private fun StatsRow(state: DailySittingUiState) {
             modifier = Modifier.weight(1f),
         )
         StatCard(
-            label = "Total",
-            value = "${state.totalMinutes}m",
+            label = "This week",
+            value = "${state.weekMinutes}m",
             modifier = Modifier.weight(1f),
         )
     }
