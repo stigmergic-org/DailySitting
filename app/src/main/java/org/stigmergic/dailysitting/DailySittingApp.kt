@@ -677,7 +677,11 @@ private fun MeditationLogScreen(
                     MeditationLogSessionCard(
                         session = session,
                         use24HourTime = use24HourTime,
-                        onDelete = { sessionPendingDelete = session },
+                        onDelete = if (session.isOwnedByApp) {
+                            { sessionPendingDelete = session }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -770,7 +774,7 @@ private fun MeditationLogEmptyCard(
 private fun MeditationLogSessionCard(
     session: SittingSession,
     use24HourTime: Boolean,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)?,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = AppCard),
@@ -812,12 +816,14 @@ private fun MeditationLogSessionCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete log entry",
-                    tint = MaterialTheme.colorScheme.error,
-                )
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete log entry",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

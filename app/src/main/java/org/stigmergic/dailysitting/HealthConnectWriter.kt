@@ -7,12 +7,14 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.MindfulnessSessionRecord
+import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 
 private const val HEALTH_CONNECT_PROVIDER_PACKAGE = "com.google.android.apps.healthdata"
@@ -71,21 +73,17 @@ class HealthConnectWriter(private val context: Context) {
         val client = HealthConnectClient.getOrCreate(context)
         val start = LocalDate.now().minusYears(10).atStartOfDay()
         val end = LocalDate.now().plusDays(1).atStartOfDay()
-        val records = mutableListOf<MindfulnessSessionRecord>()
-        var pageToken: String? = null
-
-        do {
-            val response = client.readRecords(
-                ReadRecordsRequest<MindfulnessSessionRecord>(
-                    timeRangeFilter = TimeRangeFilter.between(start, end),
-                    ascendingOrder = false,
-                    pageSize = 1_000,
-                    pageToken = pageToken,
-                ),
+        val records = try {
+            readMindfulnessRecords(client, start, end)
+        } catch (error: Exception) {
+            if (!error.isOtherAppsReadPermissionError()) throw error
+            readMindfulnessRecords(
+                client = client,
+                start = start,
+                end = end,
+                dataOriginFilter = setOf(DataOrigin(context.packageName)),
             )
-            records += response.records
-            pageToken = response.pageToken
-        } while (pageToken != null)
+        }
 
         return records.map { record ->
             val durationMinutes = Duration.between(record.startTime, record.endTime)
@@ -99,9 +97,42 @@ class HealthConnectWriter(private val context: Context) {
                 durationMinutes = durationMinutes,
                 startedAtMillis = record.startTime.toEpochMilli(),
                 endedAtMillis = record.endTime.toEpochMilli(),
+                isOwnedByApp = record.metadata.dataOrigin.packageName == context.packageName,
             )
         }
     }
+
+    private suspend fun readMindfulnessRecords(
+        client: HealthConnectClient,
+        start: LocalDateTime,
+        end: LocalDateTime,
+        dataOriginFilter: Set<DataOrigin> = emptySet(),
+    ): List<MindfulnessSessionRecord> {
+        val records = mutableListOf<MindfulnessSessionRecord>()
+        var pageToken: String? = null
+
+        do {
+            val response = client.readRecords(
+                ReadRecordsRequest<MindfulnessSessionRecord>(
+                    timeRangeFilter = TimeRangeFilter.between(start, end),
+                    dataOriginFilter = dataOriginFilter,
+                    ascendingOrder = false,
+                    pageSize = 1_000,
+                    pageToken = pageToken,
+                ),
+            )
+            records += response.records
+            pageToken = response.pageToken
+        } while (pageToken != null)
+
+        return records
+    }
+
+    private fun Throwable.isOtherAppsReadPermissionError(): Boolean =
+        generateSequence(this) { it.cause }
+            .any { error ->
+                error.message?.contains("from other applications", ignoreCase = true) == true
+            }
 
     suspend fun writeSession(session: SittingSession): HealthConnectUi {
         val currentState = refreshState()
@@ -156,6 +187,13 @@ class HealthConnectWriter(private val context: Context) {
     }
 
     suspend fun deleteSession(session: SittingSession): HealthConnectUi {
+        if (!session.isOwnedByApp) {
+            return HealthConnectUi(
+                status = HealthConnectStatus.Error,
+                message = "Not deleted. This session was recorded by another app.",
+            )
+        }
+
         val currentState = refreshState()
         if (currentState.status != HealthConnectStatus.Ready) {
             return currentState.copy(message = "Not deleted. ${currentState.message}")

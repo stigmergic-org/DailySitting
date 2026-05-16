@@ -40,6 +40,7 @@ data class SittingSession(
     val durationMinutes: Int,
     val startedAtMillis: Long,
     val endedAtMillis: Long,
+    val isOwnedByApp: Boolean = true,
 )
 
 data class DailySittingUiState(
