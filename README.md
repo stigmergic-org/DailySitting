@@ -66,3 +66,9 @@ git push origin v0.1.0
 ```
 
 If signing secrets are not configured, the workflow still builds the release variant but the APK will be unsigned.
+
+## License
+
+Project-authored code is licensed under GPL-3.0-only. See `LICENSE`.
+
+Third-party assets and dependencies remain under their respective licenses; see `THIRD_PARTY_NOTICES.md`.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 @file:OptIn(androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi::class)
 
 package org.stigmergic.dailysitting

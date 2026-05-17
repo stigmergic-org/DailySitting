@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 package org.stigmergic.dailysitting
 
 const val DefaultBellSoundId = "struck"
