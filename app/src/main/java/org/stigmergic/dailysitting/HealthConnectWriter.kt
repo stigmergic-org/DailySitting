@@ -86,15 +86,17 @@ class HealthConnectWriter(private val context: Context) {
         }
 
         return records.map { record ->
-            val durationMinutes = Duration.between(record.startTime, record.endTime)
-                .toMinutes()
+            val durationSeconds = Duration.between(record.startTime, record.endTime)
+                .seconds
+                .coerceIn(1L, Int.MAX_VALUE.toLong())
                 .toInt()
-                .coerceAtLeast(1)
+            val durationMinutes = durationSeconds / 60
             SittingSession(
                 id = record.metadata.id.ifBlank { record.metadata.clientRecordId ?: newId() },
                 presetId = record.metadata.clientRecordId ?: "health-connect",
                 presetName = record.title ?: "Mindfulness session",
                 durationMinutes = durationMinutes,
+                durationSeconds = durationSeconds,
                 startedAtMillis = record.startTime.toEpochMilli(),
                 endedAtMillis = record.endTime.toEpochMilli(),
                 isOwnedByApp = record.metadata.dataOrigin.packageName == context.packageName,
@@ -203,8 +205,8 @@ class HealthConnectWriter(private val context: Context) {
             val client = HealthConnectClient.getOrCreate(context)
             client.deleteRecords(
                 recordType = MindfulnessSessionRecord::class,
-                recordIdsList = listOf(session.id),
-                clientRecordIdsList = emptyList(),
+                recordIdsList = session.healthConnectRecordIds(),
+                clientRecordIdsList = session.clientRecordIds(),
             )
             HealthConnectUi(
                 status = HealthConnectStatus.Synced,
@@ -218,6 +220,15 @@ class HealthConnectWriter(private val context: Context) {
         }
     }
 
+    private fun SittingSession.clientRecordIds(): List<String> =
+        listOfNotNull(
+            "daily-sitting-$id",
+            presetId.takeIf { it.startsWith("daily-sitting-") },
+        ).distinct()
+
+    private fun SittingSession.healthConnectRecordIds(): List<String> =
+        if (presetId.startsWith("daily-sitting-")) listOf(id) else emptyList()
+
     private fun SittingSession.toMindfulnessSessionRecord(): MindfulnessSessionRecord {
         val start = Instant.ofEpochMilli(startedAtMillis)
         val end = Instant.ofEpochMilli(endedAtMillis)
@@ -227,7 +238,10 @@ class HealthConnectWriter(private val context: Context) {
             startZoneOffset = zoneRules.getOffset(start),
             endTime = end,
             endZoneOffset = zoneRules.getOffset(end),
-            metadata = Metadata.manualEntry(clientRecordId = "daily-sitting-$id"),
+            metadata = Metadata.manualEntry(
+                clientRecordId = "daily-sitting-$id",
+                clientRecordVersion = endedAtMillis,
+            ),
             mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
             title = presetName,
         )

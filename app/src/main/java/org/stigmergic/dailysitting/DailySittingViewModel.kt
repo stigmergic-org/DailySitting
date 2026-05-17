@@ -24,8 +24,10 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private val bellPlayer = BellPlayer(application)
 
     private var tickerJob: Job? = null
+    private var sessionSyncJob: Job? = null
     private var endRealtimeMillis: Long = 0L
-    private var sessionStartedAtMillis: Long = 0L
+    private var sessionPausedAtMillis: Long = 0L
+    private var completionRealtimeMillis: Long = 0L
     private var intervalSeconds: Int = 0
     private var nextIntervalBellSecond: Int = 0
 
@@ -55,11 +57,18 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun showTimerList() {
+        tickerJob?.cancel()
+        completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.TimerList,
             editingPreset = null,
             selectedPreset = null,
             completedSession = null,
+            remainingSeconds = 0,
+            totalSeconds = 0,
+            isTimerRunning = false,
+            completionExtraSeconds = 0,
+            canExtendCompletedSession = false,
         )
     }
 
@@ -214,7 +223,8 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         val totalSeconds = preset.durationMinutes * 60
         intervalSeconds = (preset.intervalMinutes ?: 0) * 60
         nextIntervalBellSecond = intervalSeconds
-        sessionStartedAtMillis = System.currentTimeMillis()
+        sessionPausedAtMillis = 0L
+        completionRealtimeMillis = 0L
         endRealtimeMillis = SystemClock.elapsedRealtime() + totalSeconds * 1_000L
 
         uiState = uiState.copy(
@@ -224,25 +234,107 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             totalSeconds = totalSeconds,
             remainingSeconds = totalSeconds,
             isTimerRunning = true,
+            completionExtraSeconds = 0,
+            canExtendCompletedSession = false,
         )
         launchTicker()
     }
 
     fun pauseTimer() {
+        if (!uiState.isTimerRunning) return
         updateRemainingFromClock(playBells = false)
         tickerJob?.cancel()
+        sessionPausedAtMillis = System.currentTimeMillis()
         uiState = uiState.copy(isTimerRunning = false)
     }
 
     fun resumeTimer() {
         if (uiState.remainingSeconds <= 0) return
+        sessionPausedAtMillis = 0L
         endRealtimeMillis = SystemClock.elapsedRealtime() + uiState.remainingSeconds * 1_000L
         uiState = uiState.copy(isTimerRunning = true)
         launchTicker()
     }
 
+    fun savePausedSession() {
+        if (uiState.isTimerRunning) return
+        val preset = uiState.selectedPreset ?: return
+        val elapsedSeconds = (uiState.totalSeconds - uiState.remainingSeconds).coerceAtLeast(0)
+        if (elapsedSeconds <= 0) return
+
+        tickerJob?.cancel()
+        completionRealtimeMillis = 0L
+        val endedAtMillis = sessionPausedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val session = timerSession(
+            preset = preset,
+            activeSeconds = elapsedSeconds,
+            endedAtMillis = endedAtMillis,
+        )
+
+        uiState = uiState.copy(
+            healthConnect = HealthConnectUi(
+                status = HealthConnectStatus.Checking,
+                message = "Recording partial session",
+            ),
+        )
+
+        sessionSyncJob = viewModelScope.launch {
+            syncSessionToHealthConnect(session)
+        }
+        showTimerList()
+    }
+
+    fun saveCompletedSessionWithAdditionalTime() {
+        if (!uiState.canExtendCompletedSession) return
+        val completedSession = uiState.completedSession ?: return
+        val extraSeconds = currentCompletionExtraSeconds()
+        if (extraSeconds <= 0) return
+
+        val activeSeconds = (uiState.totalSeconds + extraSeconds).coerceAtLeast(1)
+        val endedAtMillis = System.currentTimeMillis()
+        val updatedSession = completedSession.copy(
+            durationMinutes = durationMinutesForSeconds(activeSeconds),
+            durationSeconds = activeSeconds,
+            startedAtMillis = endedAtMillis - activeSeconds * 1_000L,
+            endedAtMillis = endedAtMillis,
+        )
+
+        uiState = uiState.copy(
+            completedSession = updatedSession,
+            completionExtraSeconds = extraSeconds,
+            healthConnect = HealthConnectUi(
+                status = HealthConnectStatus.Checking,
+                message = "Recording extended session",
+            ),
+        )
+
+        val previousSyncJob = sessionSyncJob
+        sessionSyncJob = viewModelScope.launch {
+            previousSyncJob?.join()
+            syncSessionToHealthConnect(updatedSession)
+        }
+        showTimerList()
+    }
+
+    fun discardCompletedSession() {
+        val completedSession = uiState.completedSession ?: return
+        val previousSyncJob = sessionSyncJob
+        showTimerList()
+
+        sessionSyncJob = viewModelScope.launch {
+            previousSyncJob?.join()
+            val healthConnect = healthConnectWriter.deleteSession(completedSession)
+            uiState = uiState.copy(healthConnect = healthConnect)
+            if (healthConnect.status == HealthConnectStatus.Synced) {
+                refreshStatsFromHealthConnect()
+            }
+        }
+    }
+
     fun cancelTimer() {
         tickerJob?.cancel()
+        sessionPausedAtMillis = 0L
+        completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.TimerList,
             selectedPreset = null,
@@ -250,6 +342,8 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             totalSeconds = 0,
             remainingSeconds = 0,
             isTimerRunning = false,
+            completionExtraSeconds = 0,
+            canExtendCompletedSession = false,
         )
     }
 
@@ -352,16 +446,12 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun completeTimer() {
-        tickerJob?.cancel()
         val preset = uiState.selectedPreset ?: return
         val endedAtMillis = System.currentTimeMillis()
-        val startedAtMillis = sessionStartedAtMillis.takeIf { it > 0L }
-            ?: (endedAtMillis - uiState.totalSeconds * 1_000L)
-        val session = SittingSession(
-            presetId = preset.id,
-            presetName = preset.name,
-            durationMinutes = preset.durationMinutes,
-            startedAtMillis = startedAtMillis,
+        completionRealtimeMillis = SystemClock.elapsedRealtime()
+        val session = timerSession(
+            preset = preset,
+            activeSeconds = uiState.totalSeconds,
             endedAtMillis = endedAtMillis,
         )
 
@@ -371,12 +461,56 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             completedSession = session,
             remainingSeconds = 0,
             isTimerRunning = false,
-            healthConnect = uiState.healthConnect.copy(message = "Recording to Health Connect"),
+            completionExtraSeconds = 0,
+            canExtendCompletedSession = true,
+            healthConnect = HealthConnectUi(
+                status = HealthConnectStatus.Checking,
+                message = "Recording to Health Connect",
+            ),
         )
 
-        viewModelScope.launch {
+        launchCompletionTicker()
+        sessionSyncJob = viewModelScope.launch {
             syncSessionToHealthConnect(session)
         }
+    }
+
+    private fun timerSession(
+        preset: TimerPreset,
+        activeSeconds: Int,
+        endedAtMillis: Long,
+    ): SittingSession {
+        val boundedActiveSeconds = activeSeconds.coerceAtLeast(1)
+        return SittingSession(
+            presetId = preset.id,
+            presetName = preset.name,
+            durationMinutes = durationMinutesForSeconds(boundedActiveSeconds),
+            durationSeconds = boundedActiveSeconds,
+            startedAtMillis = endedAtMillis - boundedActiveSeconds * 1_000L,
+            endedAtMillis = endedAtMillis,
+        )
+    }
+
+    private fun durationMinutesForSeconds(seconds: Int): Int = seconds / 60
+
+    private fun launchCompletionTicker() {
+        tickerJob?.cancel()
+        tickerJob = viewModelScope.launch {
+            while (isActive) {
+                val extraSeconds = currentCompletionExtraSeconds()
+                if (extraSeconds != uiState.completionExtraSeconds) {
+                    uiState = uiState.copy(completionExtraSeconds = extraSeconds)
+                }
+                delay(250L)
+            }
+        }
+    }
+
+    private fun currentCompletionExtraSeconds(): Int {
+        if (completionRealtimeMillis <= 0L) return uiState.completionExtraSeconds
+        return ((SystemClock.elapsedRealtime() - completionRealtimeMillis) / 1_000L)
+            .toInt()
+            .coerceAtLeast(0)
     }
 
     private suspend fun syncSessionToHealthConnect(session: SittingSession) {

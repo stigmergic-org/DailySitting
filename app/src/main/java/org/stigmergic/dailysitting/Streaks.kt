@@ -30,7 +30,7 @@ fun todayCompletedMinutes(
     val today = LocalDate.now(clock)
     return sessions
         .filter { Instant.ofEpochMilli(it.endedAtMillis).atZone(clock.zone).toLocalDate() == today }
-        .sumOf { it.durationMinutes }
+        .sumOf { it.durationSeconds } / 60
 }
 
 fun weekCompletedMinutes(
@@ -41,7 +41,7 @@ fun weekCompletedMinutes(
     val weekStart = today.with(WeekFields.of(Locale.getDefault()).dayOfWeek(), 1)
     return sessions
         .filter { Instant.ofEpochMilli(it.endedAtMillis).atZone(clock.zone).toLocalDate() >= weekStart }
-        .sumOf { it.durationMinutes }
+        .sumOf { it.durationSeconds } / 60
 }
 
-fun totalCompletedMinutes(sessions: List<SittingSession>): Int = sessions.sumOf { it.durationMinutes }
+fun totalCompletedMinutes(sessions: List<SittingSession>): Int = sessions.sumOf { it.durationSeconds } / 60

@@ -220,6 +220,8 @@ private val AppCard: Color
 private val AppProgressTrack: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
+private val TimerActionButtonHeight = 64.dp
+
 @Composable
 fun DailySittingApp(
     viewModel: DailySittingViewModel,
@@ -273,12 +275,15 @@ fun DailySittingApp(
                     state = viewModel.uiState,
                     onPause = viewModel::pauseTimer,
                     onResume = viewModel::resumeTimer,
-                    onCancel = viewModel::cancelTimer,
+                    onFinish = viewModel::savePausedSession,
+                    onDiscard = viewModel::cancelTimer,
                 )
 
                 AppScreen.Complete -> CompletionScreen(
                     state = viewModel.uiState,
+                    onAddExtraTime = viewModel::saveCompletedSessionWithAdditionalTime,
                     onBack = viewModel::showTimerList,
+                    onDiscard = viewModel::discardCompletedSession,
                 )
             }
         }
@@ -613,7 +618,7 @@ private fun MeditationLogScreen(
             title = { Text("Delete log entry?") },
             text = {
                 Text(
-                    "This will remove ${session.durationMinutes} minutes from your Health Connect meditation log.",
+                    "This will remove ${formatSessionDuration(session.durationSeconds)} from your Health Connect meditation log.",
                 )
             },
             confirmButton = {
@@ -811,7 +816,7 @@ private fun MeditationLogSessionCard(
                 )
             }
             Text(
-                text = "${session.durationMinutes}m",
+                text = formatSessionDuration(session.durationSeconds),
                 color = AppText,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -1067,7 +1072,9 @@ private fun TimerEditorScreen(
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ),
                 ) {
-                    Text("Delete Timer")
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -1453,7 +1460,8 @@ private fun ActiveTimerScreen(
     state: DailySittingUiState,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onCancel: () -> Unit,
+    onFinish: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val preset = state.selectedPreset
     val progress = if (state.totalSeconds <= 0) {
@@ -1486,32 +1494,62 @@ private fun ActiveTimerScreen(
                 remainingSeconds = state.remainingSeconds,
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            if (state.isTimerRunning) {
                 Button(
-                    onClick = if (state.isTimerRunning) onPause else onResume,
-                    modifier = Modifier.weight(1f),
+                    onClick = onPause,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TimerActionButtonHeight),
                 ) {
-                    Icon(
-                        imageVector = if (state.isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                    )
+                    Icon(Icons.Default.Pause, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (state.isTimerRunning) "Pause" else "Resume")
+                    Text("Pause")
                 }
-                FilledTonalButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Cancel")
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        FilledTonalButton(
+                            onClick = onFinish,
+                            enabled = state.totalSeconds > state.remainingSeconds,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(TimerActionButtonHeight),
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Finish")
+                        }
+                        Button(
+                            onClick = onResume,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(TimerActionButtonHeight),
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Resume")
+                        }
+                    }
+                    FilledTonalButton(
+                        onClick = onDiscard,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(TimerActionButtonHeight),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Discard session")
+                    }
                 }
             }
         }
@@ -1521,11 +1559,14 @@ private fun ActiveTimerScreen(
 @Composable
 private fun CompletionScreen(
     state: DailySittingUiState,
+    onAddExtraTime: () -> Unit,
     onBack: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
     val completedSession = state.completedSession
     val completedPreset = state.presets.firstOrNull { it.id == completedSession?.presetId }
     val completedBell = bellSoundForId(completedPreset?.bellSoundId)
+    val canAddExtraTime = state.canExtendCompletedSession && state.completionExtraSeconds >= 10
 
     Scaffold(
         topBar = { DailySittingTopBar("Session Complete") },
@@ -1562,7 +1603,7 @@ private fun CompletionScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = completionRecordText(
-                        durationMinutes = completedSession?.durationMinutes ?: 0,
+                        durationSeconds = completedSession?.durationSeconds ?: 0,
                         healthConnect = state.healthConnect,
                     ),
                     color = AppMuted,
@@ -1589,15 +1630,50 @@ private fun CompletionScreen(
                 }
             }
 
-            Button(
-                onClick = onBack,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(Icons.Default.Timer, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Back to Timers")
+                if (canAddExtraTime) {
+                    FilledTonalButton(
+                        onClick = onAddExtraTime,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(TimerActionButtonHeight),
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add +${formatSeconds(state.completionExtraSeconds)}")
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(TimerActionButtonHeight))
+                }
+                Button(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TimerActionButtonHeight),
+                ) {
+                    Icon(Icons.Default.Timer, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Back to Timers")
+                }
+                FilledTonalButton(
+                    onClick = onDiscard,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TimerActionButtonHeight),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Discard session")
+                }
             }
         }
     }
@@ -1623,10 +1699,10 @@ private fun formatSessionDateTime(session: SittingSession, use24HourTime: Boolea
 }
 
 private fun completionRecordText(
-    durationMinutes: Int,
+    durationSeconds: Int,
     healthConnect: HealthConnectUi,
 ): String = when (healthConnect.status) {
-    HealthConnectStatus.Synced -> "$durationMinutes minutes recorded"
+    HealthConnectStatus.Synced -> "${formatSessionDuration(durationSeconds)} recorded"
     HealthConnectStatus.Checking,
     HealthConnectStatus.Ready -> "Recording to Health Connect"
     HealthConnectStatus.NeedsPermission,
@@ -1638,6 +1714,17 @@ private fun formatSeconds(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format(Locale.US, "%02d:%02d", minutes, seconds)
+}
+
+private fun formatSessionDuration(totalSeconds: Int): String {
+    val boundedSeconds = totalSeconds.coerceAtLeast(0)
+    val minutes = boundedSeconds / 60
+    val seconds = boundedSeconds % 60
+    return when {
+        minutes <= 0 -> "${seconds}s"
+        seconds == 0 -> "${minutes}m"
+        else -> "${minutes}m ${seconds}s"
+    }
 }
 
 private fun formatDate(date: LocalDate): String =

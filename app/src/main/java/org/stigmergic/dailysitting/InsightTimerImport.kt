@@ -60,13 +60,14 @@ fun parseInsightTimerLogs(csv: String, zoneId: ZoneId = ZoneId.systemDefault()):
             .toInstant()
             .toEpochMilli()
         val endedAtMillis = startedAtMillis + durationSeconds * 1_000L
-        val durationMinutes = ((durationSeconds + 59L) / 60L).toInt().coerceAtLeast(1)
+        val durationSecondsInt = durationSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
         sessions += SittingSession(
             id = "insight-timer-$startedAtMillis-$durationSeconds",
             presetId = "insight-timer",
             presetName = title,
-            durationMinutes = durationMinutes,
+            durationMinutes = durationSecondsInt / 60,
+            durationSeconds = durationSecondsInt,
             startedAtMillis = startedAtMillis,
             endedAtMillis = endedAtMillis,
         )
