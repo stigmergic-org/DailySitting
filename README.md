@@ -4,71 +4,117 @@
   <img src="assets/daily-sitting-logo.png" alt="Daily Sitting logo" width="128" height="128">
 </p>
 
-Daily Sitting is a small Android meditation timer that integrates with Health Connect. It is intentionally not a content platform: no courses, feeds, coaching, accounts, or social features.
+**A minimal Android meditation timer. No accounts, no content platform, no server. Your session history lives in [Health Connect](https://health.google/health-connect-android/) — not in the app.**
 
+[⬇ Download latest APK](https://github.com/stigmergic-org/DailySitting/releases/latest) • [View releases](https://github.com/stigmergic-org/DailySitting/releases)
 
-## Product Scope
+---
 
-- Pick from configured meditation timers on the opening screen.
-- Create, edit, and delete timer presets.
-- Run a timer with an ending bell.
-- Configure optional interval bells per timer.
-- Record completed sessions to Health Connect.
-- Manually add past sessions to Health Connect with date, time, and length.
-- Show the current streak after the ending bell.
-- Read mindfulness sessions from Health Connect for today, streak, weekly minutes, and the meditation log.
-- Import meditation sessions from Insight Timer CSV exports.
-- Keep only timer presets in app storage; session history is not persisted locally.
+## Why Daily Sitting?
 
-## Android Build
+Most meditation apps are content platforms: courses, feeds, coaching, subscriptions. Daily Sitting is just a timer. It records your sessions to Health Connect so your data is yours — readable by any other app you grant access to, and not stored on any third-party server.
 
-This project uses Kotlin, Jetpack Compose, Health Connect, and Gradle. The current environment used to create the project did not have Java or Gradle installed, so build verification should be run on a machine with Android tooling or in GitHub Actions.
+- **No account required**
+- **No internet required**
+- **No session history stored in the app** — everything lives in Health Connect
+- **Open source** (GPL-3.0)
 
-The Health Connect mindfulness session API currently requires the Android 36 SDK platform for compilation.
+---
 
-Local build with Gradle installed:
+## Requirements
 
-```sh
+- Android 14 or later (Health Connect is built into Android 14+)
+- Health Connect enabled on your device
+
+---
+
+## Features
+
+- Pick from configured meditation timers on the opening screen
+- Create, edit, and delete timer presets
+- Run a timer with an ending bell
+- Configure optional interval bells per timer
+- Record completed sessions to Health Connect
+- Manually add past sessions with date, time, and duration
+- View current streak, today's minutes, and weekly minutes (read from Health Connect)
+- Import meditation history from Insight Timer CSV exports
+
+---
+
+## Installation
+
+### Option 1: Obtainium (recommended)
+
+[Obtainium](https://github.com/ImranR98/Obtainium) installs and updates apps directly from GitHub releases — no Play Store needed, and you'll get notified when new versions are available.
+
+1. Install Obtainium from its [releases page](https://github.com/ImranR98/Obtainium/releases/latest)
+2. In Obtainium, tap **Add App**
+3. Paste `https://github.com/stigmergic-org/DailySitting` and tap **Add**
+4. Tap **Install**
+
+Future updates can then be applied with one tap from within Obtainium.
+
+### Option 2: Direct APK download
+
+Download the latest APK from the [Releases page](https://github.com/stigmergic-org/DailySitting/releases/latest) and install it on your Android device.
+
+> **Note:** You'll need to allow installation from unknown sources in your Android settings.
+
+---
+
+## Building from Source
+
+**Requirements:** Android Studio, JDK, Android SDK 36 (required for the Health Connect mindfulness session API)
+
+### Debug build
+
+```bash
 ./gradlew :app:assembleDebug
+# Output: app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Release build
+
+```bash
 ./gradlew :app:assembleRelease
 ```
 
-## Local Debug Setup
+### Running in Android Studio
 
-1. Open this directory in Android Studio.
-2. Let Gradle sync finish using the included wrapper.
-3. Select the shared `app` run configuration.
-4. Connect an Android or GrapheneOS device with USB debugging enabled.
-5. Press Run.
+1. Open this directory in Android Studio
+2. Let Gradle sync finish using the included wrapper
+3. Select the shared `app` run configuration
+4. Connect an Android device (or GrapheneOS device) with USB debugging enabled
+5. Press Run
 
-The debug APK is written to:
+---
 
-```sh
-app/build/outputs/apk/debug/app-debug.apk
+## Releasing
+
+The workflow at `.github/workflows/release-apk.yml` builds and publishes an APK on tag pushes matching `v*`.
+
+To publish a signed release, add these repository secrets:
+
+| Secret | Description |
+|---|---|
+| `RELEASE_KEYSTORE_BASE64` | Base64-encoded Android keystore |
+| `RELEASE_KEYSTORE_PASSWORD` | Keystore password |
+| `RELEASE_KEY_ALIAS` | Release key alias |
+| `RELEASE_KEY_PASSWORD` | Release key password |
+
+Then create a release:
+
+```bash
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
-## GitHub Release Pipeline
+If signing secrets are not configured, the workflow still builds an unsigned APK.
 
-The workflow at `.github/workflows/release-apk.yml` builds an APK on tag pushes matching `v*` and publishes it to a GitHub Release. It can also be run manually from GitHub Actions, which uploads the APK as a workflow artifact.
-
-To publish a signed release APK, add these repository secrets:
-
-- `RELEASE_KEYSTORE_BASE64`: base64-encoded Android keystore file.
-- `RELEASE_KEYSTORE_PASSWORD`: keystore password.
-- `RELEASE_KEY_ALIAS`: release key alias.
-- `RELEASE_KEY_PASSWORD`: release key password.
-
-Create a release by pushing a tag:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-If signing secrets are not configured, the workflow still builds the release variant but the APK will be unsigned.
+---
 
 ## License
 
-Project-authored code is licensed under GPL-3.0-only. See `LICENSE`.
+Project-authored code is licensed under **GPL-3.0-only**. See [`LICENSE`](LICENSE).
 
-Third-party assets and dependencies remain under their respective licenses; see `THIRD_PARTY_NOTICES.md`.
+Third-party assets and dependencies remain under their respective licenses. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
