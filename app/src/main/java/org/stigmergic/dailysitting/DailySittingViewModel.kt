@@ -274,6 +274,10 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
 
         uiState = uiState.copy(
+            screen = AppScreen.PartialComplete,
+            completedSession = session,
+            remainingSeconds = 0,
+            isTimerRunning = false,
             healthConnect = HealthConnectUi(
                 status = HealthConnectStatus.Checking,
                 message = "Recording partial session",
@@ -283,7 +287,24 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         sessionSyncJob = viewModelScope.launch {
             syncSessionToHealthConnect(session)
         }
-        showTimerList()
+    }
+
+    fun finishPartialCompletion() {
+        if (uiState.screen == AppScreen.PartialComplete) {
+            showTimerList()
+        }
+    }
+
+    fun showCompletedSessionConfirmation() {
+        if (uiState.screen != AppScreen.Complete) return
+
+        tickerJob?.cancel()
+        completionRealtimeMillis = 0L
+        uiState = uiState.copy(
+            screen = AppScreen.PartialComplete,
+            completionExtraSeconds = 0,
+            canExtendCompletedSession = false,
+        )
     }
 
     fun saveCompletedSessionWithAdditionalTime() {
@@ -301,9 +322,13 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             endedAtMillis = endedAtMillis,
         )
 
+        tickerJob?.cancel()
+        completionRealtimeMillis = 0L
         uiState = uiState.copy(
+            screen = AppScreen.PartialComplete,
             completedSession = updatedSession,
             completionExtraSeconds = extraSeconds,
+            canExtendCompletedSession = false,
             healthConnect = HealthConnectUi(
                 status = HealthConnectStatus.Checking,
                 message = "Recording extended session",
@@ -315,7 +340,6 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             previousSyncJob?.join()
             syncSessionToHealthConnect(updatedSession)
         }
-        showTimerList()
     }
 
     fun discardCompletedSession() {

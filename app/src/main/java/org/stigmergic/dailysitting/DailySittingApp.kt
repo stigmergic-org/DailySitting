@@ -5,6 +5,15 @@ package org.stigmergic.dailysitting
 import android.annotation.SuppressLint
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -106,6 +115,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private val LightDailySittingColorScheme = lightColorScheme(
     primary = Color(0xFF4F6F52),
@@ -223,7 +233,14 @@ private val AppProgressTrack: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
 private val TimerActionButtonHeight = 64.dp
+private const val StandardScreenTransitionMillis = 220
+private const val DiscardScreenTransitionMillis = 320
+private const val CalmScreenTransitionMillis = 480
+private const val FinishScreenTransitionMillis = 2_000
+private const val CalmScreenEnterDelayMillis = 80
+private const val PartialCompletionDwellMillis = 3_000L
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun DailySittingApp(
     viewModel: DailySittingViewModel,
@@ -231,62 +248,82 @@ fun DailySittingApp(
     onImportLogs: () -> Unit,
 ) {
     DailySittingTheme {
+        val currentScreen = viewModel.uiState.screen
         BackHandler(
-            enabled = viewModel.uiState.screen == AppScreen.Editor ||
-                viewModel.uiState.screen == AppScreen.ManualSession ||
-                viewModel.uiState.screen == AppScreen.MeditationLog,
-            onBack = viewModel::showTimerList,
+            enabled = currentScreen == AppScreen.Editor ||
+                currentScreen == AppScreen.ManualSession ||
+                currentScreen == AppScreen.MeditationLog ||
+                currentScreen == AppScreen.PartialComplete,
+            onBack = {
+                if (currentScreen == AppScreen.PartialComplete) {
+                    viewModel.finishPartialCompletion()
+                } else {
+                    viewModel.showTimerList()
+                }
+            },
         )
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = AppBackground,
         ) {
-            when (viewModel.uiState.screen) {
-                AppScreen.TimerList -> TimerListScreen(
-                    state = viewModel.uiState,
-                    onStart = viewModel::startTimer,
-                    onEdit = viewModel::showEditor,
-                    onAdd = { viewModel.showEditor(null) },
-                    onAddSession = viewModel::showManualSession,
-                    onShowLog = viewModel::showMeditationLog,
-                    onRequestHealthPermissions = onRequestHealthPermissions,
-                )
+            AnimatedContent(
+                targetState = viewModel.uiState,
+                transitionSpec = { appScreenTransition(initialState.screen, targetState.screen) },
+                contentKey = { it.screen },
+                label = "Daily Sitting screen",
+            ) { state ->
+                when (state.screen) {
+                    AppScreen.TimerList -> TimerListScreen(
+                        state = state,
+                        onStart = viewModel::startTimer,
+                        onEdit = viewModel::showEditor,
+                        onAdd = { viewModel.showEditor(null) },
+                        onAddSession = viewModel::showManualSession,
+                        onShowLog = viewModel::showMeditationLog,
+                        onRequestHealthPermissions = onRequestHealthPermissions,
+                    )
 
-                AppScreen.Editor -> TimerEditorScreen(
-                    preset = viewModel.uiState.editingPreset,
-                    onSave = viewModel::savePreset,
-                    onDelete = viewModel::deletePreset,
-                    onCancel = viewModel::showTimerList,
-                    onPreviewBellSound = viewModel::previewBellSound,
-                )
+                    AppScreen.Editor -> TimerEditorScreen(
+                        preset = state.editingPreset,
+                        onSave = viewModel::savePreset,
+                        onDelete = viewModel::deletePreset,
+                        onCancel = viewModel::showTimerList,
+                        onPreviewBellSound = viewModel::previewBellSound,
+                    )
 
-                AppScreen.ManualSession -> ManualSessionScreen(
-                    onSave = viewModel::addManualSession,
-                    onCancel = viewModel::showTimerList,
-                )
+                    AppScreen.ManualSession -> ManualSessionScreen(
+                        onSave = viewModel::addManualSession,
+                        onCancel = viewModel::showTimerList,
+                    )
 
-                AppScreen.MeditationLog -> MeditationLogScreen(
-                    state = viewModel.uiState,
-                    onBack = viewModel::showTimerList,
-                    onDeleteSession = viewModel::deleteSession,
-                    onImportLogs = onImportLogs,
-                    onRequestHealthPermissions = onRequestHealthPermissions,
-                )
+                    AppScreen.MeditationLog -> MeditationLogScreen(
+                        state = state,
+                        onBack = viewModel::showTimerList,
+                        onDeleteSession = viewModel::deleteSession,
+                        onImportLogs = onImportLogs,
+                        onRequestHealthPermissions = onRequestHealthPermissions,
+                    )
 
-                AppScreen.Timer -> ActiveTimerScreen(
-                    state = viewModel.uiState,
-                    onPause = viewModel::pauseTimer,
-                    onResume = viewModel::resumeTimer,
-                    onFinish = viewModel::savePausedSession,
-                    onDiscard = viewModel::cancelTimer,
-                )
+                    AppScreen.Timer -> ActiveTimerScreen(
+                        state = state,
+                        onPause = viewModel::pauseTimer,
+                        onResume = viewModel::resumeTimer,
+                        onFinish = viewModel::savePausedSession,
+                        onDiscard = viewModel::cancelTimer,
+                    )
 
-                AppScreen.Complete -> CompletionScreen(
-                    state = viewModel.uiState,
-                    onAddExtraTime = viewModel::saveCompletedSessionWithAdditionalTime,
-                    onBack = viewModel::showTimerList,
-                    onDiscard = viewModel::discardCompletedSession,
-                )
+                    AppScreen.PartialComplete -> PartialCompletionScreen(
+                        state = state,
+                        onFinished = viewModel::finishPartialCompletion,
+                    )
+
+                    AppScreen.Complete -> CompletionScreen(
+                        state = state,
+                        onAddExtraTime = viewModel::saveCompletedSessionWithAdditionalTime,
+                        onBack = viewModel::showCompletedSessionConfirmation,
+                        onDiscard = viewModel::discardCompletedSession,
+                    )
+                }
             }
         }
     }
@@ -301,6 +338,60 @@ private fun DailySittingTheme(content: @Composable () -> Unit) {
         content = content,
     )
 }
+
+private fun appScreenTransition(initialScreen: AppScreen, targetScreen: AppScreen) =
+    when {
+        initialScreen == AppScreen.Complete && targetScreen == AppScreen.TimerList -> fadeScreenTransition(DiscardScreenTransitionMillis)
+        initialScreen == AppScreen.Complete && targetScreen == AppScreen.PartialComplete -> calmScreenTransition()
+        initialScreen == AppScreen.PartialComplete && targetScreen == AppScreen.TimerList -> fadeScreenTransition(FinishScreenTransitionMillis)
+        initialScreen == AppScreen.Timer && targetScreen == AppScreen.PartialComplete -> calmScreenTransition()
+        initialScreen == AppScreen.Timer && targetScreen == AppScreen.TimerList -> fadeScreenTransition(DiscardScreenTransitionMillis)
+        else -> fadeScreenTransition(StandardScreenTransitionMillis)
+    }
+
+private fun calmScreenTransition() =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = CalmScreenTransitionMillis,
+                delayMillis = CalmScreenEnterDelayMillis,
+                easing = FastOutSlowInEasing,
+            ),
+        ) + scaleIn(
+            initialScale = 0.985f,
+            animationSpec = tween(
+                durationMillis = CalmScreenTransitionMillis,
+                easing = FastOutSlowInEasing,
+            ),
+        )
+    ) togetherWith (
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = CalmScreenTransitionMillis,
+                easing = FastOutSlowInEasing,
+            ),
+        ) +
+            scaleOut(
+                targetScale = 0.985f,
+                animationSpec = tween(
+                    durationMillis = CalmScreenTransitionMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+            )
+    )
+
+private fun fadeScreenTransition(durationMillis: Int) =
+    fadeIn(
+        animationSpec = tween(
+            durationMillis = durationMillis,
+            easing = FastOutSlowInEasing,
+        ),
+    ) togetherWith fadeOut(
+        animationSpec = tween(
+            durationMillis = durationMillis,
+            easing = FastOutSlowInEasing,
+        ),
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1559,6 +1650,66 @@ private fun ActiveTimerScreen(
 }
 
 @Composable
+private fun PartialCompletionScreen(
+    state: DailySittingUiState,
+    onFinished: () -> Unit,
+) {
+    val completedSession = state.completedSession
+    val savedText = completedSession
+        ?.let { "Saved ${formatSessionDuration(it.durationSeconds)}" }
+        ?: "Saved session"
+    val statusText = partialCompletionStatusText(state.healthConnect)
+
+    LaunchedEffect(completedSession?.id) {
+        delay(PartialCompletionDwellMillis)
+        onFinished()
+    }
+
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Surface(
+                modifier = Modifier.size(96.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = savedText,
+                color = AppText,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = statusText,
+                color = AppMuted,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            StreakCard(streakDays = state.streakDays)
+        }
+    }
+}
+
+@Composable
 private fun CompletionScreen(
     state: DailySittingUiState,
     onAddExtraTime: () -> Unit,
@@ -1613,23 +1764,7 @@ private fun CompletionScreen(
                     textAlign = TextAlign.Center,
                 )
                 Spacer(modifier = Modifier.height(24.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = AppCard),
-                    shape = RoundedCornerShape(24.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Current streak", color = AppMuted, style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = "${state.streakDays} day${if (state.streakDays == 1) "" else "s"}",
-                            color = AppText,
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+                StreakCard(streakDays = state.streakDays)
             }
 
             Column(
@@ -1681,6 +1816,27 @@ private fun CompletionScreen(
     }
 }
 
+@Composable
+private fun StreakCard(streakDays: Int) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = AppCard),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Current streak", color = AppMuted, style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "$streakDays day${if (streakDays == 1) "" else "s"}",
+                color = AppText,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
 private fun presetDescription(preset: TimerPreset): String {
     val interval = preset.intervalMinutes
     return if (interval == null) {
@@ -1707,6 +1863,15 @@ private fun completionRecordText(
     HealthConnectStatus.Synced -> "${formatSessionDuration(durationSeconds)} recorded"
     HealthConnectStatus.Checking,
     HealthConnectStatus.Ready -> "Recording to Health Connect"
+    HealthConnectStatus.NeedsPermission,
+    HealthConnectStatus.Unavailable,
+    HealthConnectStatus.Error -> "Not recorded"
+}
+
+private fun partialCompletionStatusText(healthConnect: HealthConnectUi): String = when (healthConnect.status) {
+    HealthConnectStatus.Synced -> "Added to your meditation log"
+    HealthConnectStatus.Checking,
+    HealthConnectStatus.Ready -> "Saving your session"
     HealthConnectStatus.NeedsPermission,
     HealthConnectStatus.Unavailable,
     HealthConnectStatus.Error -> "Not recorded"
