@@ -1504,6 +1504,7 @@ private fun ManualSessionScreen(
 private fun ExpressiveTimerProgress(
     progress: Float,
     remainingSeconds: Int,
+    isTimerRunning: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val boundedProgress = progress.coerceIn(0f, 1f)
@@ -1528,17 +1529,28 @@ private fun ExpressiveTimerProgress(
             trackColor = AppProgressTrack,
             strokeCap = StrokeCap.Round,
         )
-        CircularWavyProgressIndicator(
-            progress = { boundedProgress },
-            modifier = Modifier.requiredSize(indicatorSize),
-            color = AppPrimary,
-            trackColor = Color.Transparent,
-            stroke = progressStroke,
-            trackStroke = progressStroke,
-            amplitude = { 1f },
-            wavelength = 134.dp,
-            waveSpeed = 12.dp,
-        )
+        if (isTimerRunning) {
+            CircularWavyProgressIndicator(
+                progress = { boundedProgress },
+                modifier = Modifier.requiredSize(indicatorSize),
+                color = AppPrimary,
+                trackColor = Color.Transparent,
+                stroke = progressStroke,
+                trackStroke = progressStroke,
+                amplitude = { 1f },
+                wavelength = 134.dp,
+                waveSpeed = 12.dp,
+            )
+        } else {
+            CircularProgressIndicator(
+                progress = { boundedProgress },
+                modifier = Modifier.requiredSize(trackSize),
+                color = AppPrimary,
+                strokeWidth = strokeWidth,
+                trackColor = Color.Transparent,
+                strokeCap = StrokeCap.Round,
+            )
+        }
         Text(
             text = formatSeconds(remainingSeconds),
             color = AppText,
@@ -1585,6 +1597,7 @@ private fun ActiveTimerScreen(
             ExpressiveTimerProgress(
                 progress = progress,
                 remainingSeconds = state.remainingSeconds,
+                isTimerRunning = state.isTimerRunning,
             )
 
             if (state.isTimerRunning) {
