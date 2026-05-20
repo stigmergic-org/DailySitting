@@ -581,6 +581,14 @@ private fun shouldShowHealthConnectCard(healthConnect: HealthConnectUi): Boolean
 
 @Composable
 private fun StatsRow(state: DailySittingUiState) {
+    var showThirtyDayAverage by remember { mutableStateOf(false) }
+    val averageLabel = if (showThirtyDayAverage) "30-day avg" else "7-day avg"
+    val averageMinutes = if (showThirtyDayAverage) {
+        state.thirtyDayAverageMinutes
+    } else {
+        state.sevenDayAverageMinutes
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -596,33 +604,56 @@ private fun StatsRow(state: DailySittingUiState) {
             modifier = Modifier.weight(1f),
         )
         StatCard(
-            label = "This week",
-            value = "${state.weekMinutes}m",
+            label = averageLabel,
+            value = "${averageMinutes}m",
             modifier = Modifier.weight(1f),
+            onClick = { showThirtyDayAverage = !showThirtyDayAverage },
         )
     }
 }
 
 @Composable
-private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = AppCard),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = label,
-                color = AppMuted,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Text(
-                text = value,
-                color = AppText,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
+private fun StatCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    if (onClick == null) {
+        Card(
+            modifier = modifier,
+            colors = CardDefaults.cardColors(containerColor = AppCard),
+            shape = shape,
+        ) {
+            StatCardContent(label = label, value = value)
         }
+    } else {
+        Card(
+            onClick = onClick,
+            modifier = modifier,
+            colors = CardDefaults.cardColors(containerColor = AppCard),
+            shape = shape,
+        ) {
+            StatCardContent(label = label, value = value)
+        }
+    }
+}
+
+@Composable
+private fun StatCardContent(label: String, value: String) {
+    Column(modifier = Modifier.padding(14.dp)) {
+        Text(
+            text = label,
+            color = AppMuted,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Text(
+            text = value,
+            color = AppText,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

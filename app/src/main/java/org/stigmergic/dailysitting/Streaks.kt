@@ -5,8 +5,7 @@ package org.stigmergic.dailysitting
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
-import java.time.temporal.WeekFields
-import java.util.Locale
+import kotlin.math.roundToInt
 
 fun currentStreakDays(
     sessions: List<SittingSession>,
@@ -35,15 +34,30 @@ fun todayCompletedMinutes(
         .sumOf { it.durationSeconds } / 60
 }
 
-fun weekCompletedMinutes(
+fun sevenDayAverageCompletedMinutes(
     sessions: List<SittingSession>,
     clock: Clock = Clock.systemDefaultZone(),
+): Int = averageCompletedMinutes(sessions = sessions, days = 7, clock = clock)
+
+fun thirtyDayAverageCompletedMinutes(
+    sessions: List<SittingSession>,
+    clock: Clock = Clock.systemDefaultZone(),
+): Int = averageCompletedMinutes(sessions = sessions, days = 30, clock = clock)
+
+private fun averageCompletedMinutes(
+    sessions: List<SittingSession>,
+    days: Long,
+    clock: Clock,
 ): Int {
     val today = LocalDate.now(clock)
-    val weekStart = today.with(WeekFields.of(Locale.getDefault()).dayOfWeek(), 1)
-    return sessions
-        .filter { Instant.ofEpochMilli(it.endedAtMillis).atZone(clock.zone).toLocalDate() >= weekStart }
-        .sumOf { it.durationSeconds } / 60
+    val windowStart = today.minusDays(days - 1)
+    val totalSeconds = sessions
+        .filter {
+            val date = Instant.ofEpochMilli(it.endedAtMillis).atZone(clock.zone).toLocalDate()
+            date in windowStart..today
+        }
+        .sumOf { it.durationSeconds }
+    return (totalSeconds / 60f / days.toFloat()).roundToInt()
 }
 
 fun totalCompletedMinutes(sessions: List<SittingSession>): Int = sessions.sumOf { it.durationSeconds } / 60

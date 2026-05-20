@@ -407,7 +407,8 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
                 sessions = sessions,
                 streakDays = currentStreakDays(sessions),
                 todayMinutes = todayCompletedMinutes(sessions),
-                weekMinutes = weekCompletedMinutes(sessions),
+                sevenDayAverageMinutes = sevenDayAverageCompletedMinutes(sessions),
+                thirtyDayAverageMinutes = thirtyDayAverageCompletedMinutes(sessions),
                 totalMinutes = totalCompletedMinutes(sessions),
             )
         } catch (error: Exception) {
@@ -426,7 +427,8 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             sessions = emptyList(),
             streakDays = 0,
             todayMinutes = 0,
-            weekMinutes = 0,
+            sevenDayAverageMinutes = 0,
+            thirtyDayAverageMinutes = 0,
             totalMinutes = 0,
         )
     }
