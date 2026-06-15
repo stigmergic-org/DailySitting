@@ -3,6 +3,7 @@
 package org.stigmergic.dailysitting
 
 import android.app.Application
+import android.media.AudioManager
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
@@ -20,10 +21,13 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 
+private const val LowBellVolumeFraction = 0.20f
+
 class DailySittingViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SittingStore(application)
     private val healthConnectWriter = HealthConnectWriter(application)
     private val bellPlayer = BellPlayer(application)
+    private val audioManager: AudioManager? = application.getSystemService(AudioManager::class.java)
 
     private var tickerJob: Job? = null
     private var sessionSyncJob: Job? = null
@@ -38,7 +42,12 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         reloadLocalState()
+        refreshBellVolumeWarning()
         refreshHealthConnect()
+    }
+
+    fun refreshBellVolumeWarning() {
+        uiState = uiState.copy(bellVolumeWarning = currentBellVolumeWarning())
     }
 
     fun refreshHealthConnect() {
@@ -71,6 +80,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             isTimerRunning = false,
             completionExtraSeconds = 0,
             canExtendCompletedSession = false,
+            bellVolumeWarning = currentBellVolumeWarning(),
         )
     }
 
@@ -213,6 +223,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             screen = AppScreen.TimerList,
             completedSession = null,
             healthConnect = uiState.healthConnect.copy(message = "Recording manual session"),
+            bellVolumeWarning = currentBellVolumeWarning(),
         )
 
         viewModelScope.launch {
@@ -370,6 +381,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             isTimerRunning = false,
             completionExtraSeconds = 0,
             canExtendCompletedSession = false,
+            bellVolumeWarning = currentBellVolumeWarning(),
         )
     }
 
@@ -387,6 +399,20 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         uiState = uiState.copy(
             presets = store.loadPresets(),
         )
+    }
+
+    private fun currentBellVolumeWarning(): BellVolumeWarning? {
+        val audioManager = audioManager ?: return null
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (maxVolume <= 0) return null
+
+        val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val lowVolume = (maxVolume * LowBellVolumeFraction).toInt().coerceAtLeast(1)
+        return when {
+            volume <= 0 -> BellVolumeWarning.Muted
+            volume <= lowVolume -> BellVolumeWarning.Low
+            else -> null
+        }
     }
 
     private suspend fun refreshHealthConnectNow() {

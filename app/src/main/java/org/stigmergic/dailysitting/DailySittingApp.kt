@@ -107,6 +107,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeOff
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -527,6 +529,12 @@ private fun TimerListScreen(
                     )
                 }
 
+                state.bellVolumeWarning?.let { warning ->
+                    item {
+                        BellVolumeWarningCard(warning = warning)
+                    }
+                }
+
                 if (shouldShowHealthConnectCard(state.healthConnect)) {
                     item {
                         HealthConnectCard(
@@ -578,6 +586,65 @@ private fun TimerListScreen(
 private fun shouldShowHealthConnectCard(healthConnect: HealthConnectUi): Boolean =
     healthConnect.status != HealthConnectStatus.Ready &&
         healthConnect.status != HealthConnectStatus.Synced
+
+@Composable
+private fun BellVolumeWarningCard(warning: BellVolumeWarning) {
+    val title = when (warning) {
+        BellVolumeWarning.Muted -> "Media volume is off"
+        BellVolumeWarning.Low -> "Media volume is very low"
+    }
+    val message = when (warning) {
+        BellVolumeWarning.Muted -> "Timer bells may be silent. Turn up media volume before starting."
+        BellVolumeWarning.Low -> "Timer bells may be hard to hear. Turn up media volume before starting."
+    }
+    val containerColor = when (warning) {
+        BellVolumeWarning.Muted -> MaterialTheme.colorScheme.errorContainer
+        BellVolumeWarning.Low -> MaterialTheme.colorScheme.secondaryContainer
+    }
+    val contentColor = when (warning) {
+        BellVolumeWarning.Muted -> MaterialTheme.colorScheme.onErrorContainer
+        BellVolumeWarning.Low -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    val icon = when (warning) {
+        BellVolumeWarning.Muted -> Icons.Default.VolumeOff
+        BellVolumeWarning.Low -> Icons.Default.VolumeDown
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    color = contentColor,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = message,
+                    color = contentColor.copy(alpha = 0.82f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun StatsRow(state: DailySittingUiState) {

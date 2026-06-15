@@ -23,6 +23,11 @@ enum class HealthConnectStatus {
     Error,
 }
 
+enum class BellVolumeWarning {
+    Muted,
+    Low,
+}
+
 data class HealthConnectUi(
     val status: HealthConnectStatus = HealthConnectStatus.Checking,
     val message: String = "Checking Health Connect",
@@ -65,6 +70,7 @@ data class DailySittingUiState(
     val thirtyDayAverageMinutes: Int = 0,
     val totalMinutes: Int = 0,
     val healthConnect: HealthConnectUi = HealthConnectUi(),
+    val bellVolumeWarning: BellVolumeWarning? = null,
 )
 
 fun newId(): String = UUID.randomUUID().toString()
