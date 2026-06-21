@@ -28,6 +28,18 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private val healthConnectWriter = HealthConnectWriter(application)
     private val bellPlayer = BellPlayer(application)
     private val audioManager: AudioManager? = application.getSystemService(AudioManager::class.java)
+    private val timerMediaNotification = TimerMediaNotification(
+        application,
+        object : TimerMediaNotificationControls {
+            override fun onPauseTimer() {
+                pauseTimer()
+            }
+
+            override fun onResumeTimer() {
+                resumeTimer()
+            }
+        },
+    )
 
     private var tickerJob: Job? = null
     private var sessionSyncJob: Job? = null
@@ -69,6 +81,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     fun showTimerList() {
         tickerJob?.cancel()
+        timerMediaNotification.cancel()
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.TimerList,
@@ -250,6 +263,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             completionExtraSeconds = 0,
             canExtendCompletedSession = false,
         )
+        updateTimerNotification()
         launchTicker()
     }
 
@@ -259,6 +273,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         tickerJob?.cancel()
         sessionPausedAtMillis = System.currentTimeMillis()
         uiState = uiState.copy(isTimerRunning = false)
+        updateTimerNotification()
     }
 
     fun resumeTimer() {
@@ -266,6 +281,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         sessionPausedAtMillis = 0L
         endRealtimeMillis = SystemClock.elapsedRealtime() + uiState.remainingSeconds * 1_000L
         uiState = uiState.copy(isTimerRunning = true)
+        updateTimerNotification()
         launchTicker()
     }
 
@@ -276,6 +292,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         if (elapsedSeconds <= 0) return
 
         tickerJob?.cancel()
+        timerMediaNotification.cancel()
         completionRealtimeMillis = 0L
         val endedAtMillis = sessionPausedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
         val session = timerSession(
@@ -370,6 +387,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     fun cancelTimer() {
         tickerJob?.cancel()
+        timerMediaNotification.cancel()
         sessionPausedAtMillis = 0L
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
@@ -391,6 +409,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     override fun onCleared() {
         tickerJob?.cancel()
+        timerMediaNotification.release()
         bellPlayer.release()
         super.onCleared()
     }
@@ -478,6 +497,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         val remainingSeconds = ((millisRemaining + 999L) / 1_000L).toInt()
         if (remainingSeconds != uiState.remainingSeconds) {
             uiState = uiState.copy(remainingSeconds = remainingSeconds)
+            updateTimerNotification()
         }
 
         if (playBells) {
@@ -502,6 +522,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private fun completeTimer() {
         val preset = uiState.selectedPreset ?: return
         val endedAtMillis = System.currentTimeMillis()
+        timerMediaNotification.cancel()
         completionRealtimeMillis = SystemClock.elapsedRealtime()
         val session = timerSession(
             preset = preset,
@@ -586,5 +607,20 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         } else {
             importedText
         }
+    }
+
+    private fun updateTimerNotification() {
+        val preset = uiState.selectedPreset ?: return
+        if (uiState.totalSeconds <= 0 || uiState.remainingSeconds <= 0) {
+            timerMediaNotification.cancel()
+            return
+        }
+
+        timerMediaNotification.show(
+            preset = preset,
+            totalSeconds = uiState.totalSeconds,
+            remainingSeconds = uiState.remainingSeconds,
+            isRunning = uiState.isTimerRunning,
+        )
     }
 }

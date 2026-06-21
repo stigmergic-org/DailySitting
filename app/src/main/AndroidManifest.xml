@@ -42,6 +42,10 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <receiver
+            android:name=".TimerMediaNotificationActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
