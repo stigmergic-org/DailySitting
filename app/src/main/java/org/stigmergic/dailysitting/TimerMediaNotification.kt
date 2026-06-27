@@ -20,6 +20,7 @@ import android.graphics.drawable.Icon
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import java.util.Locale
@@ -29,14 +30,20 @@ private const val TimerNotificationChannelId = "timer"
 private const val TimerNotificationId = 1001
 private const val PauseTimerAction = "org.stigmergic.dailysitting.action.PAUSE_TIMER"
 private const val ResumeTimerAction = "org.stigmergic.dailysitting.action.RESUME_TIMER"
+private const val BackToTimersAction = "org.stigmergic.dailysitting.action.BACK_TO_TIMERS"
+private const val AddCompletedTimeAction = "org.stigmergic.dailysitting.action.ADD_COMPLETED_TIME"
 private const val PauseTimerRequestCode = 1
 private const val ResumeTimerRequestCode = 2
 private const val ContentRequestCode = 3
+private const val BackToTimersRequestCode = 4
+private const val AddCompletedTimeRequestCode = 5
 private const val TimerArtworkSizePx = 512
 
 interface TimerMediaNotificationControls {
     fun onPauseTimer()
     fun onResumeTimer()
+    fun onBackToTimers()
+    fun onAddCompletedTime()
 }
 
 class TimerMediaNotification(
@@ -55,6 +62,13 @@ class TimerMediaNotification(
 
                 override fun onPause() {
                     controls.onPauseTimer()
+                }
+
+                override fun onCustomAction(action: String, extras: Bundle?) {
+                    when (action) {
+                        BackToTimersAction -> controls.onBackToTimers()
+                        AddCompletedTimeAction -> controls.onAddCompletedTime()
+                    }
                 }
             },
             Handler(Looper.getMainLooper()),
@@ -99,12 +113,31 @@ class TimerMediaNotification(
 
     fun cancel() {
         notificationManager.cancel(TimerNotificationId)
-        mediaSession.isActive = false
-        mediaSession.setPlaybackState(
-            PlaybackState.Builder()
-                .setState(PlaybackState.STATE_STOPPED, 0L, 0f)
-                .build(),
-        )
+        stopMediaSession()
+    }
+
+    fun showCompleted(
+        preset: TimerPreset,
+        extraSeconds: Int,
+    ) {
+        try {
+            ensureNotificationChannel()
+            updateCompletedMediaSession(
+                title = preset.name,
+                extraSeconds = extraSeconds,
+            )
+            notificationManager.notify(
+                TimerNotificationId,
+                buildCompletedNotification(
+                    title = preset.name,
+                    extraSeconds = extraSeconds,
+                ),
+            )
+        } catch (_: SecurityException) {
+            // Notification permission can be denied; the timer completion still counts.
+        } catch (_: RuntimeException) {
+            // Notification rendering can vary by device; completion and bell playback should continue.
+        }
     }
 
     fun release() {
@@ -153,6 +186,48 @@ class TimerMediaNotification(
             .build()
     }
 
+    private fun buildCompletedNotification(
+        title: String,
+        extraSeconds: Int,
+    ): Notification {
+        val backToTimersAction = Notification.Action.Builder(
+            R.drawable.ic_notification_back,
+            "Back to Timers",
+            actionIntent(BackToTimersAction, BackToTimersRequestCode),
+        ).build()
+        val addTimeTitle = if (extraSeconds > 0) {
+            "Add +${formatTimerSeconds(extraSeconds)}"
+        } else {
+            "Add time"
+        }
+        val addTimeAction = Notification.Action.Builder(
+            R.drawable.ic_notification_add,
+            addTimeTitle,
+            actionIntent(AddCompletedTimeAction, AddCompletedTimeRequestCode),
+        ).build()
+
+        return Notification.Builder(appContext, TimerNotificationChannelId)
+            .setSmallIcon(R.drawable.ic_notification_app)
+            .setLargeIcon(Icon.createWithBitmap(artworkBitmap))
+            .setContentTitle(title)
+            .setContentText("Session complete")
+            .setSubText(appContext.getString(R.string.app_name))
+            .setContentIntent(contentIntent())
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setOngoing(true)
+            .addAction(backToTimersAction)
+            .addAction(addTimeAction)
+            .setStyle(
+                Notification.MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1),
+            )
+            .build()
+    }
+
     private fun updateMediaSession(
         title: String,
         totalSeconds: Int,
@@ -181,6 +256,50 @@ class TimerMediaNotification(
                 .build(),
         )
         mediaSession.isActive = true
+    }
+
+    private fun updateCompletedMediaSession(
+        title: String,
+        extraSeconds: Int,
+    ) {
+        mediaSession.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Session complete")
+                .putBitmap(MediaMetadata.METADATA_KEY_ART, artworkBitmap)
+                .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artworkBitmap)
+                .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, artworkBitmap)
+                .build(),
+        )
+        mediaSession.setPlaybackState(
+            PlaybackState.Builder()
+                .addCustomAction(
+                    PlaybackState.CustomAction.Builder(
+                        BackToTimersAction,
+                        "Back to Timers",
+                        R.drawable.ic_notification_back,
+                    ).build(),
+                )
+                .addCustomAction(
+                    PlaybackState.CustomAction.Builder(
+                        AddCompletedTimeAction,
+                        if (extraSeconds > 0) "Add +${formatTimerSeconds(extraSeconds)}" else "Add time",
+                        R.drawable.ic_notification_add,
+                    ).build(),
+                )
+                .setState(PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
+                .build(),
+        )
+        mediaSession.isActive = true
+    }
+
+    private fun stopMediaSession() {
+        mediaSession.isActive = false
+        mediaSession.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(PlaybackState.STATE_STOPPED, 0L, 0f)
+                .build(),
+        )
     }
 
     private fun ensureNotificationChannel() {
@@ -248,6 +367,8 @@ private object TimerMediaNotificationCommands {
         when (action) {
             PauseTimerAction -> currentControls.onPauseTimer()
             ResumeTimerAction -> currentControls.onResumeTimer()
+            BackToTimersAction -> currentControls.onBackToTimers()
+            AddCompletedTimeAction -> currentControls.onAddCompletedTime()
         }
     }
 }

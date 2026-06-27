@@ -38,6 +38,14 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             override fun onResumeTimer() {
                 resumeTimer()
             }
+
+            override fun onBackToTimers() {
+                showTimerList()
+            }
+
+            override fun onAddCompletedTime() {
+                saveCompletedSessionWithAdditionalTime()
+            }
         },
     )
 
@@ -327,6 +335,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         if (uiState.screen != AppScreen.Complete) return
 
         tickerJob?.cancel()
+        timerMediaNotification.cancel()
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.PartialComplete,
@@ -351,6 +360,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
 
         tickerJob?.cancel()
+        timerMediaNotification.cancel()
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.PartialComplete,
@@ -522,7 +532,6 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private fun completeTimer() {
         val preset = uiState.selectedPreset ?: return
         val endedAtMillis = System.currentTimeMillis()
-        timerMediaNotification.cancel()
         completionRealtimeMillis = SystemClock.elapsedRealtime()
         val session = timerSession(
             preset = preset,
@@ -545,6 +554,10 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
 
         launchCompletionTicker()
+        viewModelScope.launch {
+            delay(300L)
+            updateCompletedNotification()
+        }
         sessionSyncJob = viewModelScope.launch {
             syncSessionToHealthConnect(session)
         }
@@ -575,6 +588,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
                 val extraSeconds = currentCompletionExtraSeconds()
                 if (extraSeconds != uiState.completionExtraSeconds) {
                     uiState = uiState.copy(completionExtraSeconds = extraSeconds)
+                    updateCompletedNotification()
                 }
                 delay(250L)
             }
@@ -611,16 +625,27 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     private fun updateTimerNotification() {
         val preset = uiState.selectedPreset ?: return
-        if (uiState.totalSeconds <= 0 || uiState.remainingSeconds <= 0) {
+        if (uiState.totalSeconds <= 0) {
             timerMediaNotification.cancel()
             return
         }
+        if (uiState.remainingSeconds <= 0) return
 
         timerMediaNotification.show(
             preset = preset,
             totalSeconds = uiState.totalSeconds,
             remainingSeconds = uiState.remainingSeconds,
             isRunning = uiState.isTimerRunning,
+        )
+    }
+
+    private fun updateCompletedNotification() {
+        val preset = uiState.selectedPreset ?: return
+        if (uiState.screen != AppScreen.Complete) return
+
+        timerMediaNotification.showCompleted(
+            preset = preset,
+            extraSeconds = uiState.completionExtraSeconds,
         )
     }
 }
