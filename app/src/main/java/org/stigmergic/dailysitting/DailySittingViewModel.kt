@@ -27,27 +27,25 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private val store = SittingStore(application)
     private val healthConnectWriter = HealthConnectWriter(application)
     private val bellPlayer = BellPlayer(application)
+    private val appContext = application.applicationContext
     private val audioManager: AudioManager? = application.getSystemService(AudioManager::class.java)
-    private val timerMediaNotification = TimerMediaNotification(
-        application,
-        object : TimerMediaNotificationControls {
-            override fun onPauseTimer() {
-                pauseTimer()
-            }
+    private val notificationControls = object : TimerMediaNotificationControls {
+        override fun onPauseTimer() {
+            pauseTimer()
+        }
 
-            override fun onResumeTimer() {
-                resumeTimer()
-            }
+        override fun onResumeTimer() {
+            resumeTimer()
+        }
 
-            override fun onBackToTimers() {
-                showTimerList()
-            }
+        override fun onBackToTimers() {
+            showTimerList()
+        }
 
-            override fun onAddCompletedTime() {
-                saveCompletedSessionWithAdditionalTime()
-            }
-        },
-    )
+        override fun onAddCompletedTime() {
+            saveCompletedSessionWithAdditionalTime()
+        }
+    }
 
     private var tickerJob: Job? = null
     private var sessionSyncJob: Job? = null
@@ -61,6 +59,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         private set
 
     init {
+        TimerMediaNotificationCommands.register(notificationControls)
         reloadLocalState()
         refreshBellVolumeWarning()
         refreshHealthConnect()
@@ -89,7 +88,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     fun showTimerList() {
         tickerJob?.cancel()
-        timerMediaNotification.cancel()
+        TimerForegroundService.cancel(appContext)
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.TimerList,
@@ -300,7 +299,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         if (elapsedSeconds <= 0) return
 
         tickerJob?.cancel()
-        timerMediaNotification.cancel()
+        TimerForegroundService.cancel(appContext)
         completionRealtimeMillis = 0L
         val endedAtMillis = sessionPausedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
         val session = timerSession(
@@ -335,7 +334,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         if (uiState.screen != AppScreen.Complete) return
 
         tickerJob?.cancel()
-        timerMediaNotification.cancel()
+        TimerForegroundService.cancel(appContext)
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.PartialComplete,
@@ -360,7 +359,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
 
         tickerJob?.cancel()
-        timerMediaNotification.cancel()
+        TimerForegroundService.cancel(appContext)
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
             screen = AppScreen.PartialComplete,
@@ -397,7 +396,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     fun cancelTimer() {
         tickerJob?.cancel()
-        timerMediaNotification.cancel()
+        TimerForegroundService.cancel(appContext)
         sessionPausedAtMillis = 0L
         completionRealtimeMillis = 0L
         uiState = uiState.copy(
@@ -419,7 +418,8 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
 
     override fun onCleared() {
         tickerJob?.cancel()
-        timerMediaNotification.release()
+        TimerMediaNotificationCommands.unregister(notificationControls)
+        TimerForegroundService.cancel(appContext)
         bellPlayer.release()
         super.onCleared()
     }
@@ -539,7 +539,6 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
             endedAtMillis = endedAtMillis,
         )
 
-        bellPlayer.play(preset.bellSoundId)
         uiState = uiState.copy(
             screen = AppScreen.Complete,
             completedSession = session,
@@ -554,10 +553,7 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
 
         launchCompletionTicker()
-        viewModelScope.launch {
-            delay(300L)
-            updateCompletedNotification()
-        }
+        updateCompletedNotification(playBell = true)
         sessionSyncJob = viewModelScope.launch {
             syncSessionToHealthConnect(session)
         }
@@ -626,12 +622,13 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     private fun updateTimerNotification() {
         val preset = uiState.selectedPreset ?: return
         if (uiState.totalSeconds <= 0) {
-            timerMediaNotification.cancel()
+            TimerForegroundService.cancel(appContext)
             return
         }
         if (uiState.remainingSeconds <= 0) return
 
-        timerMediaNotification.show(
+        TimerForegroundService.showActive(
+            context = appContext,
             preset = preset,
             totalSeconds = uiState.totalSeconds,
             remainingSeconds = uiState.remainingSeconds,
@@ -639,13 +636,16 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
     }
 
-    private fun updateCompletedNotification() {
-        val preset = uiState.selectedPreset ?: return
-        if (uiState.screen != AppScreen.Complete) return
+    private fun updateCompletedNotification(playBell: Boolean = false): Boolean {
+        val preset = uiState.selectedPreset ?: return false
+        if (uiState.screen != AppScreen.Complete) return false
 
-        timerMediaNotification.showCompleted(
+        TimerForegroundService.showCompleted(
+            context = appContext,
             preset = preset,
             extraSeconds = uiState.completionExtraSeconds,
+            playBell = playBell,
         )
+        return true
     }
 }

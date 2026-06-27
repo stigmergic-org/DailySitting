@@ -17,6 +17,7 @@ import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.drawable.Icon
+import android.media.AudioAttributes
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -27,7 +28,7 @@ import java.util.Locale
 import kotlin.random.Random
 
 private const val TimerNotificationChannelId = "timer"
-private const val TimerNotificationId = 1001
+internal const val TimerNotificationId = 1001
 private const val PauseTimerAction = "org.stigmergic.dailysitting.action.PAUSE_TIMER"
 private const val ResumeTimerAction = "org.stigmergic.dailysitting.action.RESUME_TIMER"
 private const val BackToTimersAction = "org.stigmergic.dailysitting.action.BACK_TO_TIMERS"
@@ -48,43 +49,40 @@ interface TimerMediaNotificationControls {
 
 class TimerMediaNotification(
     context: Context,
-    private val controls: TimerMediaNotificationControls,
 ) {
     private val appContext = context.applicationContext
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
     private val artworkBitmap: Bitmap by lazy { createTimerArtworkBitmap() }
+    private val bellAudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
     private val mediaSession = MediaSession(appContext, "Daily Sitting Timer").apply {
+        setPlaybackToLocal(bellAudioAttributes)
         setCallback(
             object : MediaSession.Callback() {
                 override fun onPlay() {
-                    controls.onResumeTimer()
+                    TimerMediaNotificationCommands.dispatch(appContext, ResumeTimerAction)
                 }
 
                 override fun onPause() {
-                    controls.onPauseTimer()
+                    TimerMediaNotificationCommands.dispatch(appContext, PauseTimerAction)
                 }
 
                 override fun onCustomAction(action: String, extras: Bundle?) {
-                    when (action) {
-                        BackToTimersAction -> controls.onBackToTimers()
-                        AddCompletedTimeAction -> controls.onAddCompletedTime()
-                    }
+                    TimerMediaNotificationCommands.dispatch(appContext, action)
                 }
             },
             Handler(Looper.getMainLooper()),
         )
     }
 
-    init {
-        TimerMediaNotificationCommands.register(controls)
-    }
-
-    fun show(
+    fun activeNotification(
         preset: TimerPreset,
         totalSeconds: Int,
         remainingSeconds: Int,
         isRunning: Boolean,
-    ) {
+    ): Notification {
         val boundedTotalSeconds = totalSeconds.coerceAtLeast(1)
         val boundedRemainingSeconds = remainingSeconds.coerceIn(0, boundedTotalSeconds)
         val elapsedSeconds = boundedTotalSeconds - boundedRemainingSeconds
@@ -97,18 +95,11 @@ class TimerMediaNotification(
             isRunning = isRunning,
         )
 
-        try {
-            notificationManager.notify(
-                TimerNotificationId,
-                buildNotification(
-                    title = preset.name,
-                    remainingSeconds = boundedRemainingSeconds,
-                    isRunning = isRunning,
-                ),
-            )
-        } catch (_: SecurityException) {
-            // Notification permission can be denied; the timer should continue normally.
-        }
+        return buildNotification(
+            title = preset.name,
+            remainingSeconds = boundedRemainingSeconds,
+            isRunning = isRunning,
+        )
     }
 
     fun cancel() {
@@ -116,33 +107,26 @@ class TimerMediaNotification(
         stopMediaSession()
     }
 
-    fun showCompleted(
+    fun completedNotification(
         preset: TimerPreset,
         extraSeconds: Int,
-    ) {
-        try {
-            ensureNotificationChannel()
-            updateCompletedMediaSession(
-                title = preset.name,
-                extraSeconds = extraSeconds,
-            )
-            notificationManager.notify(
-                TimerNotificationId,
-                buildCompletedNotification(
-                    title = preset.name,
-                    extraSeconds = extraSeconds,
-                ),
-            )
-        } catch (_: SecurityException) {
-            // Notification permission can be denied; the timer completion still counts.
-        } catch (_: RuntimeException) {
-            // Notification rendering can vary by device; completion and bell playback should continue.
-        }
+        isBellPlaying: Boolean,
+    ): Notification {
+        ensureNotificationChannel()
+        updateCompletedMediaSession(
+            title = preset.name,
+            extraSeconds = extraSeconds,
+            isBellPlaying = isBellPlaying,
+        )
+
+        return buildCompletedNotification(
+            title = preset.name,
+            extraSeconds = extraSeconds,
+        )
     }
 
     fun release() {
         cancel()
-        TimerMediaNotificationCommands.unregister(controls)
         mediaSession.release()
     }
 
@@ -261,7 +245,11 @@ class TimerMediaNotification(
     private fun updateCompletedMediaSession(
         title: String,
         extraSeconds: Int,
+        isBellPlaying: Boolean,
     ) {
+        val playbackState = if (isBellPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+        val playbackSpeed = if (isBellPlaying) 1f else 0f
+
         mediaSession.setMetadata(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
@@ -287,7 +275,7 @@ class TimerMediaNotification(
                         R.drawable.ic_notification_add,
                     ).build(),
                 )
-                .setState(PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
+                .setState(playbackState, PlaybackState.PLAYBACK_POSITION_UNKNOWN, playbackSpeed)
                 .build(),
         )
         mediaSession.isActive = true
@@ -343,7 +331,7 @@ class TimerMediaNotificationActionReceiver : BroadcastReceiver() {
     }
 }
 
-private object TimerMediaNotificationCommands {
+internal object TimerMediaNotificationCommands {
     @Volatile
     private var controls: TimerMediaNotificationControls? = null
 
