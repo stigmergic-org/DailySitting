@@ -190,6 +190,46 @@ class HealthConnectWriter(private val context: Context) {
         }
     }
 
+    suspend fun updateSession(session: SittingSession): HealthConnectUi {
+        if (!session.isOwnedByApp) {
+            return HealthConnectUi(
+                status = HealthConnectStatus.Error,
+                message = "Not updated. This session was recorded by another app.",
+            )
+        }
+        val currentState = refreshState()
+        if (currentState.status != HealthConnectStatus.Ready) {
+            return currentState.copy(message = "Not updated. ${currentState.message}")
+        }
+        return try {
+            val client = HealthConnectClient.getOrCreate(context)
+            val existing = client.readRecord(MindfulnessSessionRecord::class, session.id).record
+            val start = Instant.ofEpochMilli(session.startedAtMillis)
+            val end = Instant.ofEpochMilli(session.endedAtMillis)
+            val rules = ZoneId.systemDefault().rules
+            client.updateRecords(
+                listOf(
+                    MindfulnessSessionRecord(
+                        startTime = start,
+                        startZoneOffset = rules.getOffset(start),
+                        endTime = end,
+                        endZoneOffset = rules.getOffset(end),
+                        metadata = existing.metadata,
+                        mindfulnessSessionType = existing.mindfulnessSessionType,
+                        title = session.presetName,
+                        notes = existing.notes,
+                    ),
+                ),
+            )
+            HealthConnectUi(HealthConnectStatus.Synced, "Updated in Health Connect")
+        } catch (error: Exception) {
+            HealthConnectUi(
+                HealthConnectStatus.Error,
+                "Not updated. Health Connect update failed: ${error.message ?: "unknown error"}",
+            )
+        }
+    }
+
     suspend fun deleteSession(session: SittingSession): HealthConnectUi {
         if (!session.isOwnedByApp) {
             return HealthConnectUi(

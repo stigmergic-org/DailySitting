@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -75,6 +76,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +89,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -260,6 +264,8 @@ fun DailySittingApp(
             onBack = {
                 if (currentScreen == AppScreen.PartialComplete) {
                     viewModel.finishPartialCompletion()
+                } else if (currentScreen == AppScreen.ManualSession) {
+                    viewModel.cancelSessionEditor()
                 } else {
                     viewModel.showTimerList()
                 }
@@ -296,14 +302,16 @@ fun DailySittingApp(
                     )
 
                     AppScreen.ManualSession -> ManualSessionScreen(
-                        onSave = viewModel::addManualSession,
-                        onCancel = viewModel::showTimerList,
+                        state = state,
+                        onSave = viewModel::saveSession,
+                        onCancel = viewModel::cancelSessionEditor,
                     )
 
                     AppScreen.MeditationLog -> MeditationLogScreen(
                         state = state,
                         onBack = viewModel::showTimerList,
                         onDeleteSession = viewModel::deleteSession,
+                        onEditSession = viewModel::editSession,
                         onImportLogs = onImportLogs,
                         onRequestHealthPermissions = onRequestHealthPermissions,
                     )
@@ -770,6 +778,7 @@ private fun MeditationLogScreen(
     state: DailySittingUiState,
     onBack: () -> Unit,
     onDeleteSession: (SittingSession) -> Unit,
+    onEditSession: (SittingSession) -> Unit,
     onImportLogs: () -> Unit,
     onRequestHealthPermissions: () -> Unit,
 ) {
@@ -876,6 +885,11 @@ private fun MeditationLogScreen(
                     MeditationLogSessionCard(
                         session = session,
                         use24HourTime = use24HourTime,
+                        onEdit = if (session.isOwnedByApp) {
+                            { onEditSession(session) }
+                        } else {
+                            null
+                        },
                         onDelete = if (session.isOwnedByApp) {
                             { sessionPendingDelete = session }
                         } else {
@@ -973,6 +987,7 @@ private fun MeditationLogEmptyCard(
 private fun MeditationLogSessionCard(
     session: SittingSession,
     use24HourTime: Boolean,
+    onEdit: (() -> Unit)?,
     onDelete: (() -> Unit)?,
 ) {
     Card(
@@ -982,9 +997,9 @@ private fun MeditationLogSessionCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Surface(
                 modifier = Modifier.size(48.dp),
@@ -1009,19 +1024,28 @@ private fun MeditationLogSessionCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Text(
-                text = formatSessionDuration(session.durationSeconds),
-                color = AppText,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            if (onDelete != null) {
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete log entry",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = formatSessionDuration(session.durationSeconds),
+                    color = AppText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row {
+                    if (onEdit != null) {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit log entry")
+                        }
+                    }
+                    if (onDelete != null) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete log entry",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1079,6 +1103,7 @@ private fun MinuteInput(
     onValueChange: (Int) -> Unit,
     range: IntRange,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val boundedValue = value.coerceIn(range)
     var text by remember { mutableStateOf(boundedValue.toString()) }
@@ -1091,6 +1116,7 @@ private fun MinuteInput(
 
     OutlinedTextField(
         value = text,
+        enabled = enabled,
         onValueChange = { input ->
             val digits = input.filter(Char::isDigit).take(4)
             text = digits
@@ -1446,13 +1472,27 @@ private fun BellSoundIconGraphic(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualSessionScreen(
-    onSave: (LocalDate, LocalTime, Int) -> Unit,
+    state: DailySittingUiState,
+    onSave: (String, LocalDate, LocalTime, Int) -> Unit,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
-    var sessionDate by remember { mutableStateOf(LocalDate.now()) }
-    var sessionTime by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
-    var durationMinutes by remember { mutableStateOf(10) }
+    val session = state.editingSession
+    val initialEnd = remember(session) {
+        session?.let { Instant.ofEpochMilli(it.endedAtMillis).atZone(ZoneId.systemDefault()) }
+    }
+    var sessionName by rememberSaveable(session?.id) { mutableStateOf(session?.presetName.orEmpty()) }
+    var sessionDateText by rememberSaveable(session?.id) {
+        mutableStateOf((initialEnd?.toLocalDate() ?: LocalDate.now()).toString())
+    }
+    var sessionTimeText by rememberSaveable(session?.id) {
+        mutableStateOf((initialEnd?.toLocalTime() ?: LocalTime.now().withSecond(0).withNano(0)).toString())
+    }
+    val sessionDate = LocalDate.parse(sessionDateText)
+    val sessionTime = LocalTime.parse(sessionTimeText)
+    var durationMinutes by rememberSaveable(session?.id) {
+        mutableStateOf(session?.durationMinutes?.coerceIn(1, 24 * 60) ?: 10)
+    }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     val use24HourTime = DateFormat.is24HourFormat(context)
@@ -1476,10 +1516,10 @@ private fun ManualSessionScreen(
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { selectedDateMillis ->
-                            sessionDate = Instant
+                            sessionDateText = Instant
                                 .ofEpochMilli(selectedDateMillis)
                                 .atZone(ZoneOffset.UTC)
-                                .toLocalDate()
+                                .toLocalDate().toString()
                         }
                         showDatePicker = false
                     },
@@ -1503,7 +1543,7 @@ private fun ManualSessionScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        sessionTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
+                        sessionTimeText = LocalTime.of(timePickerState.hour, timePickerState.minute).toString()
                         showTimePicker = false
                     },
                 ) {
@@ -1524,7 +1564,7 @@ private fun ManualSessionScreen(
     Scaffold(
         topBar = {
             DailySittingTopBar(
-                title = "Add Session",
+                title = if (session == null) "Add Session" else "Edit Session",
                 navigationText = "Cancel",
                 onNavigationClick = onCancel,
             )
@@ -1535,9 +1575,25 @@ private fun ManualSessionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Session name", style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(
+                    value = sessionName,
+                    onValueChange = { sessionName = it },
+                    placeholder = { Text("Manual session") },
+                    singleLine = true,
+                    enabled = !state.isSavingSession,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "Session name" },
+                )
+            }
+
             Text(
                 text = "Use the time the session ended.",
                 color = AppMuted,
@@ -1550,6 +1606,7 @@ private fun ManualSessionScreen(
             ) {
                 FilledTonalButton(
                     onClick = { showDatePicker = true },
+                    enabled = !state.isSavingSession,
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp),
@@ -1560,6 +1617,7 @@ private fun ManualSessionScreen(
                 }
                 FilledTonalButton(
                     onClick = { showTimePicker = true },
+                    enabled = !state.isSavingSession,
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp),
@@ -1575,6 +1633,7 @@ private fun ManualSessionScreen(
                 value = durationMinutes,
                 onValueChange = { durationMinutes = it },
                 range = 1..(24 * 60),
+                enabled = !state.isSavingSession,
             )
 
             if (isFutureSession) {
@@ -1585,16 +1644,26 @@ private fun ManualSessionScreen(
                 )
             }
 
+            state.sessionSaveError?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
             Button(
-                onClick = { onSave(sessionDate, sessionTime, durationMinutes) },
-                enabled = !isFutureSession,
+                onClick = { onSave(sessionName, sessionDate, sessionTime, durationMinutes) },
+                enabled = !isFutureSession && !state.isSavingSession,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
             ) {
                 Icon(Icons.Default.Save, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Save Session")
+                Text(
+                    if (state.isSavingSession) "Saving…" else if (session == null) "Save Session" else "Save changes",
+                )
             }
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -114,10 +115,26 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
     fun showManualSession() {
         uiState = uiState.copy(
             screen = AppScreen.ManualSession,
+            editingSession = null,
+            sessionSaveError = null,
             editingPreset = null,
             selectedPreset = null,
             completedSession = null,
         )
+    }
+
+    fun editSession(session: SittingSession) {
+        if (!session.isOwnedByApp || uiState.isSavingSession) return
+        uiState = uiState.copy(
+            screen = AppScreen.ManualSession,
+            editingSession = session,
+            sessionSaveError = null,
+        )
+    }
+
+    fun cancelSessionEditor() {
+        if (uiState.isSavingSession) return
+        if (uiState.editingSession != null) showMeditationLog() else showTimerList()
     }
 
     fun showStats() {
@@ -228,31 +245,37 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun addManualSession(endedDate: LocalDate, endedTime: LocalTime, durationMinutes: Int) {
-        val cleanDuration = durationMinutes.coerceIn(1, 24 * 60)
-        val endedAtMillis = endedDate
-            .atTime(endedTime)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val startedAtMillis = endedAtMillis - cleanDuration * 60_000L
-        val session = SittingSession(
-            presetId = "manual",
-            presetName = "Manual session",
-            durationMinutes = cleanDuration,
-            startedAtMillis = startedAtMillis,
-            endedAtMillis = endedAtMillis,
-        )
-
-        uiState = uiState.copy(
-            screen = AppScreen.TimerList,
-            completedSession = null,
-            healthConnect = uiState.healthConnect.copy(message = "Recording manual session"),
-            bellVolumeWarning = currentBellVolumeWarning(),
-        )
-
+    fun saveSession(name: String, endedDate: LocalDate, endedTime: LocalTime, durationMinutes: Int) {
+        if (uiState.isSavingSession) return
+        val original = uiState.editingSession
+        val session = sessionFromForm(original, name, endedDate, endedTime, durationMinutes)
+        if (session.endedAtMillis > System.currentTimeMillis()) {
+            uiState = uiState.copy(sessionSaveError = "Session time cannot be in the future.")
+            return
+        }
+        uiState = uiState.copy(isSavingSession = true, sessionSaveError = null)
         viewModelScope.launch {
-            syncSessionToHealthConnect(session)
+            val result = try {
+                if (original == null) {
+                    healthConnectWriter.writeSession(session)
+                } else {
+                    healthConnectWriter.updateSession(session)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                HealthConnectUi(
+                    HealthConnectStatus.Error,
+                    "Could not save session: ${error.message ?: "unknown error"}",
+                )
+            }
+            uiState = uiState.copy(isSavingSession = false, healthConnect = result)
+            if (result.status == HealthConnectStatus.Synced) {
+                if (original == null) showTimerList() else showMeditationLog()
+                refreshStatsFromHealthConnect()
+            } else {
+                uiState = uiState.copy(sessionSaveError = result.message)
+            }
         }
     }
 
