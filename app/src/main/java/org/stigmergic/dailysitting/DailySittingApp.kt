@@ -255,6 +255,7 @@ fun DailySittingApp(
             enabled = currentScreen == AppScreen.Editor ||
                 currentScreen == AppScreen.ManualSession ||
                 currentScreen == AppScreen.MeditationLog ||
+                currentScreen == AppScreen.Stats ||
                 currentScreen == AppScreen.PartialComplete,
             onBack = {
                 if (currentScreen == AppScreen.PartialComplete) {
@@ -282,6 +283,7 @@ fun DailySittingApp(
                         onAdd = { viewModel.showEditor(null) },
                         onAddSession = viewModel::showManualSession,
                         onShowLog = viewModel::showMeditationLog,
+                        onShowStats = viewModel::showStats,
                         onRequestHealthPermissions = onRequestHealthPermissions,
                     )
 
@@ -303,6 +305,12 @@ fun DailySittingApp(
                         onBack = viewModel::showTimerList,
                         onDeleteSession = viewModel::deleteSession,
                         onImportLogs = onImportLogs,
+                        onRequestHealthPermissions = onRequestHealthPermissions,
+                    )
+
+                    AppScreen.Stats -> StatsScreen(
+                        state = state,
+                        onBack = viewModel::showTimerList,
                         onRequestHealthPermissions = onRequestHealthPermissions,
                     )
 
@@ -492,6 +500,7 @@ private fun TimerListScreen(
     onAdd: () -> Unit,
     onAddSession: () -> Unit,
     onShowLog: () -> Unit,
+    onShowStats: () -> Unit,
     onRequestHealthPermissions: () -> Unit,
 ) {
     var fabExpanded by remember { mutableStateOf(false) }
@@ -518,7 +527,7 @@ private fun TimerListScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
-                    StatsRow(state = state)
+                    StatsRow(state = state, onClick = onShowStats)
                 }
 
                 item {
@@ -647,15 +656,7 @@ private fun BellVolumeWarningCard(warning: BellVolumeWarning) {
 }
 
 @Composable
-private fun StatsRow(state: DailySittingUiState) {
-    var showThirtyDayAverage by remember { mutableStateOf(false) }
-    val averageLabel = if (showThirtyDayAverage) "30-day avg" else "7-day avg"
-    val averageMinutes = if (showThirtyDayAverage) {
-        state.thirtyDayAverageMinutes
-    } else {
-        state.sevenDayAverageMinutes
-    }
-
+private fun StatsRow(state: DailySittingUiState, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -664,17 +665,19 @@ private fun StatsRow(state: DailySittingUiState) {
             label = "Today",
             value = "${state.todayMinutes}m",
             modifier = Modifier.weight(1f),
+            onClick = onClick,
         )
         StatCard(
             label = "Streak",
             value = "${state.streakDays}d",
             modifier = Modifier.weight(1f),
+            onClick = onClick,
         )
         StatCard(
-            label = averageLabel,
-            value = "${averageMinutes}m",
+            label = "7-day avg",
+            value = "${state.sevenDayAverageMinutes}m",
             modifier = Modifier.weight(1f),
-            onClick = { showThirtyDayAverage = !showThirtyDayAverage },
+            onClick = onClick,
         )
     }
 }

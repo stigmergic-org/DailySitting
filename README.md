@@ -36,7 +36,8 @@ Most meditation apps are content platforms: courses, feeds, coaching, subscripti
 - Configure optional interval bells per timer
 - Record completed sessions to Health Connect
 - Manually add past sessions with date, time, and duration
-- View current streak, today's minutes, and weekly minutes (read from Health Connect)
+- View today's minutes, current streak, and daily average (read from Health Connect)
+- Tap any stat to explore daily meditation heatmaps: last 30 days, past months, and a year overview
 - Import meditation history from Insight Timer CSV exports
 
 ---
@@ -102,14 +103,15 @@ To publish a signed release, add these repository secrets:
 | `RELEASE_KEY_ALIAS` | Release key alias |
 | `RELEASE_KEY_PASSWORD` | Release key password |
 
-Then create a release:
+Then commit your changes using semantic commit messages (`feat:`, `fix:`, etc.) and run:
 
 ```bash
-git tag v0.2.3
-git push origin v0.2.3
+./release.sh
 ```
 
-If signing secrets are not configured, the workflow still builds an unsigned APK.
+The script bumps the version and Android version code, commits the release, and pushes the branch and tag to the `github` remote. GitHub runs the unit tests and builds the signed APK before publishing it as a release for Obtainium.
+
+Tag builds require all signing secrets above; missing secrets stop publication.
 
 ---
 

@@ -9,6 +9,7 @@ enum class AppScreen {
     Editor,
     ManualSession,
     MeditationLog,
+    Stats,
     Timer,
     PartialComplete,
     Complete,

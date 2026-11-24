@@ -120,6 +120,11 @@ class DailySittingViewModel(application: Application) : AndroidViewModel(applica
         )
     }
 
+    fun showStats() {
+        uiState = uiState.copy(screen = AppScreen.Stats)
+        refreshHealthConnect()
+    }
+
     fun showMeditationLog() {
         uiState = uiState.copy(
             screen = AppScreen.MeditationLog,
