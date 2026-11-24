@@ -36,7 +36,7 @@ Most meditation apps are content platforms: courses, feeds, coaching, subscripti
 - Configure optional interval bells per timer
 - Record completed sessions to Health Connect
 - Manually add past sessions with date, time, and duration
-- View today's minutes, current streak, and daily average (read from Health Connect)
+- View current streak, 7-day average, and 30-day average (read from Health Connect)
 - Tap any stat to explore daily meditation heatmaps: last 30 days, past months, and a year overview
 - Import meditation history from Insight Timer CSV exports
 

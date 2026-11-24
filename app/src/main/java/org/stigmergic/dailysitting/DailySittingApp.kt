@@ -662,12 +662,6 @@ private fun StatsRow(state: DailySittingUiState, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         StatCard(
-            label = "Today",
-            value = "${state.todayMinutes}m",
-            modifier = Modifier.weight(1f),
-            onClick = onClick,
-        )
-        StatCard(
             label = "Streak",
             value = "${state.streakDays}d",
             modifier = Modifier.weight(1f),
@@ -676,6 +670,12 @@ private fun StatsRow(state: DailySittingUiState, onClick: () -> Unit) {
         StatCard(
             label = "7-day avg",
             value = "${state.sevenDayAverageMinutes}m",
+            modifier = Modifier.weight(1f),
+            onClick = onClick,
+        )
+        StatCard(
+            label = "30-day avg",
+            value = "${state.thirtyDayAverageMinutes}m",
             modifier = Modifier.weight(1f),
             onClick = onClick,
         )

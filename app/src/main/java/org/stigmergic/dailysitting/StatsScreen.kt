@@ -3,6 +3,7 @@
 package org.stigmergic.dailysitting
 
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -78,8 +80,21 @@ internal fun StatsScreen(
     val currentMonth = YearMonth.from(today)
     var monthKey by rememberSaveable { mutableStateOf<String?>(null) }
     var yearView by rememberSaveable { mutableStateOf(false) }
+    var returnToYear by rememberSaveable { mutableStateOf(false) }
     var year by rememberSaveable { mutableStateOf(today.year) }
     var selectedDayKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val detailScrollState = rememberLazyListState()
+    val yearScrollState = rememberLazyListState()
+    val navigateBack: () -> Unit = {
+        if (returnToYear && !yearView) {
+            yearView = true
+            returnToYear = false
+            selectedDayKey = null
+        } else {
+            onBack()
+        }
+    }
+    BackHandler(enabled = returnToYear && !yearView, onBack = navigateBack)
     val month = monthKey?.let(YearMonth::parse)
     val range = if (yearView) {
         PracticeRange(LocalDate.of(year, 1, 1), minOf(LocalDate.of(year, 12, 31), today))
@@ -103,7 +118,7 @@ internal fun StatsScreen(
             CenterAlignedTopAppBar(
                 title = { Text("Your practice") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = navigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -111,6 +126,7 @@ internal fun StatsScreen(
         },
     ) { padding ->
         LazyColumn(
+            state = if (yearView) yearScrollState else detailScrollState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -132,12 +148,20 @@ internal fun StatsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = !yearView,
-                            onClick = { yearView = false; selectedDayKey = null },
+                            onClick = {
+                                if (yearView) returnToYear = false
+                                yearView = false
+                                selectedDayKey = null
+                            },
                             label = { Text("Detail") },
                         )
                         FilterChip(
                             selected = yearView,
-                            onClick = { yearView = true; selectedDayKey = null },
+                            onClick = {
+                                yearView = true
+                                returnToYear = false
+                                selectedDayKey = null
+                            },
                             label = { Text("Year") },
                         )
                     }
@@ -150,7 +174,11 @@ internal fun StatsScreen(
                                 onClick = {
                                     selectedDayKey = null
                                     if (yearView) year-- else {
-                                        monthKey = (month?.minusMonths(1) ?: currentMonth.minusMonths(1)).toString()
+                                        monthKey = if (month == currentMonth) {
+                                            null
+                                        } else {
+                                            (month?.minusMonths(1) ?: currentMonth.minusMonths(1)).toString()
+                                        }
                                     }
                                 },
                             ) {
@@ -165,12 +193,15 @@ internal fun StatsScreen(
                                 style = MaterialTheme.typography.titleLarge,
                             )
                             IconButton(
-                                enabled = if (yearView) year < today.year else month != null,
+                                enabled = if (yearView) year < today.year else month != currentMonth,
                                 onClick = {
                                     selectedDayKey = null
                                     if (yearView) year++ else {
-                                        val next = month!!.plusMonths(1)
-                                        monthKey = next.takeIf { it < currentMonth }?.toString()
+                                        monthKey = if (month == null) {
+                                            currentMonth.toString()
+                                        } else {
+                                            month.plusMonths(1).takeIf { it < currentMonth }?.toString()
+                                        }
                                     }
                                 },
                             ) {
@@ -187,6 +218,7 @@ internal fun StatsScreen(
                             TextButton(onClick = {
                                 monthKey = null
                                 yearView = false
+                                returnToYear = false
                                 selectedDayKey = null
                             }) { Text("Back to last 30 days") }
                         }
@@ -207,6 +239,7 @@ internal fun StatsScreen(
                                     onClick = {
                                         monthKey = miniMonth.toString()
                                         yearView = false
+                                        returnToYear = true
                                         selectedDayKey = null
                                     },
                                 )
